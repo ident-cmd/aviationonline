@@ -45,26 +45,33 @@ function getResend(): Resend {
 }
 
 // Unified Email Sender (SMTP or Resend)
+let smtpTransporter: nodemailer.Transporter | null = null;
+
 async function sendEmail({ to, subject, html }: { to: string | string[], subject: string, html: string }) {
   addLog('info', `Attempting to send email to ${to}`, { subject });
   try {
     if (process.env.SMTP_HOST) {
       addLog('info', 'Using SMTP for email sending');
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT || '465'),
-        secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
+      
+      if (!smtpTransporter) {
+        smtpTransporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || '465'),
+          secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+          pool: true, // Use pooled connections
+          maxConnections: 1, // Limit connections to avoid Hostinger rate limits
+        });
+      }
       
       const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'contact@aviationonline.fr';
       const fromName = process.env.SMTP_FROM || 'Aviation Online';
       const from = `"${fromName}" <${fromEmail}>`;
       
-      await transporter.sendMail({
+      await smtpTransporter.sendMail({
         from,
         to: Array.isArray(to) ? to.join(', ') : to,
         subject,
