@@ -45,33 +45,27 @@ function getResend(): Resend {
 }
 
 // Unified Email Sender (SMTP or Resend)
-let smtpTransporter: nodemailer.Transporter | null = null;
-
 async function sendEmail({ to, subject, html }: { to: string | string[], subject: string, html: string }) {
   addLog('info', `Attempting to send email to ${to}`, { subject });
   try {
     if (process.env.SMTP_HOST) {
       addLog('info', 'Using SMTP for email sending');
       
-      if (!smtpTransporter) {
-        smtpTransporter = nodemailer.createTransport({
-          host: process.env.SMTP_HOST,
-          port: parseInt(process.env.SMTP_PORT || '465'),
-          secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
-          auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
-          },
-          pool: true, // Use pooled connections
-          maxConnections: 1, // Limit connections to avoid Hostinger rate limits
-        });
-      }
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '465'),
+        secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
       
       const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'contact@aviationonline.fr';
       const fromName = process.env.SMTP_FROM || 'Aviation Online';
       const from = `"${fromName}" <${fromEmail}>`;
       
-      await smtpTransporter.sendMail({
+      await transporter.sendMail({
         from,
         to: Array.isArray(to) ? to.join(', ') : to,
         subject,
@@ -948,42 +942,51 @@ async function startServer() {
     console.log(`Received request to send QCM results for ${userEmail} (${userName}) - Quiz: ${quizTitle}`);
 
     try {
-      // Send to student
-      await sendEmail({
-        to: userEmail,
-        subject: `Résultats QCM : ${quizTitle}`,
-        html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; rounded: 10px;">
-            <h2 style="color: #2563eb;">Bravo ${userName} !</h2>
-            <p>Vous venez de terminer le quiz : <strong>${quizTitle}</strong></p>
-            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">
-              <div style="font-size: 48px; font-weight: bold; color: #1e293b;">${score} / ${totalQuestions}</div>
-              <div style="font-size: 18px; color: #2563eb; font-weight: bold;">${percentage}% de réussite</div>
+      // Send both emails in parallel so one failure doesn't block the other
+      const results = await Promise.allSettled([
+        // Send to student
+        sendEmail({
+          to: userEmail,
+          subject: `Résultats QCM : ${quizTitle}`,
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; rounded: 10px;">
+              <h2 style="color: #2563eb;">Bravo ${userName} !</h2>
+              <p>Vous venez de terminer le quiz : <strong>${quizTitle}</strong></p>
+              <div style="background: #f8fafc; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">
+                <div style="font-size: 48px; font-weight: bold; color: #1e293b;">${score} / ${totalQuestions}</div>
+                <div style="font-size: 18px; color: #2563eb; font-weight: bold;">${percentage}% de réussite</div>
+              </div>
+              <p>Continuez vos efforts pour réussir votre formation IFR !</p>
+              <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+              <p style="font-size: 12px; color: #94a3b8;">Ceci est un message automatique de Aviation Online.</p>
             </div>
-            <p>Continuez vos efforts pour réussir votre formation IFR !</p>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-            <p style="font-size: 12px; color: #94a3b8;">Ceci est un message automatique de Aviation Online.</p>
-          </div>
-        `
+          `
+        }),
+        // Send to admin
+        sendEmail({
+          to: 'ident@aviationonline.fr',
+          subject: `Nouveau résultat QCM : ${userName}`,
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; rounded: 10px;">
+              <h2 style="color: #1e293b;">Nouveau résultat QCM</h2>
+              <p>L'étudiant <strong>${userName}</strong> (${userEmail}) a terminé un quiz.</p>
+              <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0;">
+                <p><strong>Quiz :</strong> ${quizTitle}</p>
+                <p><strong>Score :</strong> ${score} / ${totalQuestions} (${percentage}%)</p>
+              </div>
+            </div>
+          `
+        })
+      ]);
+
+      // Log any failures
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Email ${index === 0 ? 'to student' : 'to admin'} failed:`, result.reason);
+        }
       });
 
-      // Send to admin
-      await sendEmail({
-        to: 'ident@aviationonline.fr',
-        subject: `Nouveau résultat QCM : ${userName}`,
-        html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; rounded: 10px;">
-            <h2 style="color: #1e293b;">Nouveau résultat QCM</h2>
-            <p>L'étudiant <strong>${userName}</strong> (${userEmail}) a terminé un quiz.</p>
-            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0;">
-              <p><strong>Quiz :</strong> ${quizTitle}</p>
-              <p><strong>Score :</strong> ${score} / ${totalQuestions} (${percentage}%)</p>
-            </div>
-          </div>
-        `
-      });
-
-      res.json({ success: true });
+      res.json({ success: true, results });
     } catch (error: any) {
       console.error("Email Error:", error);
       res.status(500).json({ error: error.message });
