@@ -1,4 +1,6 @@
 import express from "express";
+import dns from "node:dns";
+dns.setDefaultResultOrder("ipv4first");
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import Stripe from "stripe";

@@ -7,7 +7,7 @@ async function test() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        userEmail: 'haltoclop@gmail.com',
+        userEmail: 'test@example.com',
         userName: 'Test User',
         quizTitle: 'Test Quiz',
         score: 5,
@@ -16,9 +16,9 @@ async function test() {
       })
     });
     const data = await res.json();
-    console.log("Response:", res.status, data);
-  } catch (err) {
-    console.error("Error:", err);
+    console.log("Response:", data);
+  } catch (e) {
+    console.error("Error:", e);
   }
 }
 
