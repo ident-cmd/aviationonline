@@ -61,7 +61,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const timeoutId = setTimeout(() => {
       if (loading) {
         console.warn("Auth loading timed out, forcing display");
-        if (auth.currentUser?.email === 'ident@aviationonline.fr') {
+        if (auth.currentUser?.email === 'contact@aviationonline.net') {
           console.log("Forcing virtual admin profile due to timeout");
           setProfile({
             uid: auth.currentUser.uid,
@@ -107,7 +107,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 ...data,
                 isPaid: !!data.isPaid // Ensure it's a boolean
               } as UserProfile;
-              const isAdminEmail = user.email === 'ident@aviationonline.fr';
+              const isAdminEmail = user.email === 'contact@aviationonline.net';
               
               if (isAdminEmail && (currentProfile.role !== 'admin' || !currentProfile.isPaid)) {
                 console.log("Forcing admin role for", user.email);
@@ -132,7 +132,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               console.log("Profile does not exist for", user.email, "- logging out");
               
               // Only create a new profile automatically if it's the master admin
-              const isAdminEmail = user.email === 'ident@aviationonline.fr';
+              const isAdminEmail = user.email === 'contact@aviationonline.net';
               if (isAdminEmail) {
                 const [firstName, ...lastNameParts] = (user.displayName || 'Utilisateur').split(' ');
                 const lastName = lastNameParts.join(' ') || 'Inconnu';
@@ -194,7 +194,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
         }, (err) => {
           console.error("Profile snapshot error:", err);
-          const isAdminEmail = user.email === 'ident@aviationonline.fr';
+          const isAdminEmail = user.email === 'contact@aviationonline.net';
           if (isAdminEmail) {
             console.log("Admin profile read failed, but attempting to proceed as admin");
             setProfile({
@@ -466,7 +466,7 @@ const Footer = () => {
           </div>
           <div>
             <h4 className="text-white font-bold mb-4">Contact</h4>
-            <a href="mailto:contact@aviationonline.fr" target="_blank" rel="noopener noreferrer" className="text-sm hover:text-white transition-colors">contact@aviationonline.fr</a>
+            <a href="mailto:contact@aviationonline.net" target="_blank" rel="noopener noreferrer" className="text-sm hover:text-white transition-colors">contact@aviationonline.net</a>
             <p className="text-sm mt-2">Expertise aéronautique et pédagogie IFR.</p>
           </div>
         </div>

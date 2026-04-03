@@ -19,7 +19,7 @@ export default function LegalMentions() {
             <p>Siège social : 1bis, Avenue Justin Maurice 47520 LE PASSAGE</p>
             <p>SIRET : 791 546 419</p>
             <p>TVA Intracommunautaire : Non applicable, art. 293 B du CGI</p>
-            <p>Email : contact@aviationonline.fr</p>
+            <p>Email : contact@aviationonline.net</p>
             <p>Téléphone : 06 63 09 10 36</p>
           </div>
 
@@ -49,7 +49,7 @@ export default function LegalMentions() {
           <div>
             <h2 className="text-xl font-bold text-zinc-900 mb-3">5. Données personnelles (RGPD)</h2>
             <p className="leading-relaxed">
-              Conformément au Règlement Général sur la Protection des Données (RGPD), vous disposez d'un droit d'accès, de rectification, de suppression et d'opposition aux données personnelles vous concernant. Pour exercer ce droit, vous pouvez nous contacter par email à : <strong>contact@aviationonline.fr</strong>.
+              Conformément au Règlement Général sur la Protection des Données (RGPD), vous disposez d'un droit d'accès, de rectification, de suppression et d'opposition aux données personnelles vous concernant. Pour exercer ce droit, vous pouvez nous contacter par email à : <strong>contact@aviationonline.net</strong>.
             </p>
           </div>
         </section>

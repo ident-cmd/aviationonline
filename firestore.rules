@@ -12,8 +12,8 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-             (request.auth.token.email == "ident@aviationonline.fr" ||
-              request.auth.token.email == "server@aviationonline.fr" ||
+             (request.auth.token.email == "contact@aviationonline.net" ||
+              request.auth.token.email == "server@aviationonline.net" ||
               (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }

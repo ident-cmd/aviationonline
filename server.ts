@@ -66,7 +66,7 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
         family: 4
       } as any);
       
-      const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'contact@aviationonline.fr';
+      const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'contact@aviationonline.net';
       const fromName = process.env.SMTP_FROM || 'Aviation Online';
       const from = `"${fromName}" <${fromEmail}>`;
       
@@ -84,7 +84,7 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
       const resend = getResend();
       const from = process.env.RESEND_FROM || 'Aviation Online <onboarding@resend.dev>';
       
-      if (from.includes('onboarding@resend.dev') && to !== 'ident@aviationonline.fr') {
+      if (from.includes('onboarding@resend.dev') && to !== 'contact@aviationonline.net') {
         console.warn(`[EMAIL WARNING] Using Resend onboarding address. Emails to ${to} will likely fail unless this email is verified in your Resend account. Please verify your domain in Resend and set the RESEND_FROM environment variable.`);
       }
 
@@ -130,7 +130,7 @@ async function initFirebaseClient() {
     clientAuth = getClientAuth(app);
     
     // Authenticate the server client
-    const serverEmail = 'server@aviationonline.fr';
+    const serverEmail = 'server@aviationonline.net';
     const serverPassword = process.env.SERVER_SECRET_PASSWORD || 'SuperSecretPassword123!';
     
     try {
@@ -283,7 +283,7 @@ async function startServer() {
             // 2. Send notification email to ADMIN
             try {
               await sendEmail({
-                to: 'ident@aviationonline.fr',
+                to: 'contact@aviationonline.net',
                 subject: '🔔 Nouvelle Vente : Formation IFR',
                 html: `
                   <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
@@ -360,7 +360,7 @@ async function startServer() {
     try {
       // Verify admin token
       const decodedToken = await auth.verifyIdToken(adminToken);
-      if (decodedToken.email !== 'ident@aviationonline.fr') {
+      if (decodedToken.email !== 'contact@aviationonline.net') {
         return res.status(403).json({ error: "Unauthorized" });
       }
 
@@ -440,7 +440,7 @@ async function startServer() {
       const decodedToken = await auth.verifyIdToken(token);
       
       // Only allow specific admin email
-      if (decodedToken.email !== 'ident@aviationonline.fr') {
+      if (decodedToken.email !== 'contact@aviationonline.net') {
         return res.status(403).json({ error: "Forbidden" });
       }
 
@@ -492,7 +492,7 @@ async function startServer() {
             
             // Send notification email to ADMIN
             await sendEmail({
-              to: 'ident@aviationonline.fr',
+              to: 'contact@aviationonline.net',
               subject: '🔔 Activation Manuelle : Formation IFR',
               html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
@@ -600,7 +600,7 @@ async function startServer() {
         return res.status(401).json({ error: "Invalid admin token: " + tokenErr.message });
       }
       
-      if (decodedToken.email !== 'ident@aviationonline.fr') {
+      if (decodedToken.email !== 'contact@aviationonline.net') {
         return res.status(403).json({ error: "Unauthorized: You are not the master admin" });
       }
 
@@ -794,7 +794,7 @@ async function startServer() {
 
         try {
           await sendEmail({
-            to: 'ident@aviationonline.fr',
+            to: 'contact@aviationonline.net',
             subject: '🔔 Nouvelle Vente : Formation IFR',
             html: `
               <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
@@ -919,7 +919,7 @@ async function startServer() {
       // Send notification email to ADMIN
       try {
         await sendEmail({
-          to: 'ident@aviationonline.fr',
+          to: 'contact@aviationonline.net',
           subject: '🔔 Nouvel inscrit : Formation IFR',
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
@@ -972,7 +972,7 @@ async function startServer() {
         }),
         // Send to admin
         sendEmail({
-          to: 'ident@aviationonline.fr',
+          to: 'contact@aviationonline.net',
           subject: `Nouveau résultat QCM : ${userName}`,
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; rounded: 10px;">
