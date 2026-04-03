@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType, auth, testConnection } from '../firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, query, orderBy, onSnapshot, Timestamp, writeBatch, getDocs, limit, where, getDocFromServer, setDoc } from 'firebase/firestore';
 import { defaultTestimonials } from '../data/testimonials';
-import { Plus, Trash2, Edit2, BookOpen, ChevronDown, ChevronUp, Database, FileText, X, AlertCircle, CheckCircle2, Upload, History, Mail, UserPlus, Award, Users, Search, Star, Shield } from 'lucide-react';
+import { Plus, Trash2, Edit2, BookOpen, ChevronDown, ChevronUp, Database, FileText, X, AlertCircle, CheckCircle2, Upload, History, Mail, UserPlus, Award, Users, Search, Star, Shield, ArrowUp, ArrowDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../App';
 import Papa from 'papaparse';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { GoogleGenAI } from "@google/genai";
 
 interface Module {
   id: string;
@@ -55,6 +56,8 @@ interface Question {
   options: string[];
   correctAnswer: number;
   explanation?: string;
+  attachmentUrl?: string;
+  attachmentType?: 'image' | 'pdf';
   order: number;
 }
 
@@ -109,6 +112,7 @@ export default function AdminDashboard() {
   const [expandedQuiz, setExpandedQuiz] = useState<string | null>(null);
   const [coursesByModule, setCoursesByModule] = useState<Record<string, Course[]>>({});
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isImportingPdf, setIsImportingPdf] = useState(false);
   const [diagnosticResult, setDiagnosticResult] = useState<string | null>(null);
 
   const runDiagnostic = async () => {
@@ -155,7 +159,7 @@ export default function AdminDashboard() {
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [dbTestStatus, setDbTestStatus] = useState<{ type: 'success' | 'error' | 'loading', text: string } | null>(null);
   const [serverDebugResult, setServerDebugResult] = useState<any>(null);
-  const [showConfirmDelete, setShowConfirmDelete] = useState<{ type: 'module' | 'course' | 'clear' | 'user' | 'seedTestimonials', id?: string, moduleId?: string } | null>(null);
+  const [showConfirmDelete, setShowConfirmDelete] = useState<{ type: 'module' | 'course' | 'clear' | 'user' | 'seedTestimonials' | 'quiz', id?: string, moduleId?: string } | null>(null);
   
   // Migration state
   const [migrationData, setMigrationData] = useState<any[]>([]);
@@ -338,6 +342,116 @@ export default function AdminDashboard() {
       return unsubscribe;
     }
   }, [activeTab]);
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingPdf(true);
+    showStatus('success', 'Analyse du PDF en cours... Cela peut prendre quelques minutes.');
+
+    try {
+      // Read file as base64
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      
+      reader.onload = async () => {
+        try {
+          const base64String = (reader.result as string).split(',')[1];
+          
+          if (!process.env.GEMINI_API_KEY) {
+            throw new Error("Clé API Gemini non configurée");
+          }
+
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+          const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [
+              {
+                inlineData: {
+                  data: base64String,
+                  mimeType: "application/pdf"
+                }
+              },
+              {
+                text: `Tu es un expert en aviation. Je vais te donner le texte extrait d'un PDF contenant un QCM d'aviation.
+Ton but est d'extraire les questions et les réponses, et de les formater en JSON strict.
+Le JSON doit avoir cette structure exacte :
+{
+  "questions": [
+    {
+      "text": "Texte de la question",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctAnswer": 0, // L'index de la bonne réponse (0 pour A, 1 pour B, etc.)
+      "explanation": "Explication courte de la bonne réponse (optionnel)"
+    }
+  ]
+}
+Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
+              }
+            ]
+          });
+
+          const responseText = response.text || "";
+          // Nettoyer la réponse au cas où il y aurait du markdown
+          const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+          
+          let data;
+          try {
+            data = JSON.parse(cleanJson);
+          } catch (e) {
+            throw new Error("Le format renvoyé par l'IA n'est pas un JSON valide.");
+          }
+
+          const questions = data.questions;
+          if (!questions || questions.length === 0) {
+            throw new Error('Aucune question trouvée dans le PDF');
+          }
+
+          // Create a new Quiz
+          const quizRef = await addDoc(collection(db, 'quizzes'), {
+            title: file.name.replace('.pdf', ''),
+            description: `Importé depuis ${file.name}`,
+            order: quizzes.length + 1
+          });
+
+          // Add all questions to the new Quiz
+          const batch = writeBatch(db);
+          questions.forEach((q: any, index: number) => {
+            const questionRef = doc(collection(db, `quizzes/${quizRef.id}/questions`));
+            batch.set(questionRef, {
+              quizId: quizRef.id,
+              text: q.text,
+              options: q.options,
+              correctAnswer: q.correctAnswer,
+              explanation: q.explanation || '',
+              order: index + 1
+            });
+          });
+
+          await batch.commit();
+          showStatus('success', `${questions.length} questions importées avec succès !`);
+        } catch (err: any) {
+          console.error("PDF parse error:", err);
+          showStatus('error', err.message || 'Erreur lors de l\'importation');
+        } finally {
+          setIsImportingPdf(false);
+          // Reset input
+          e.target.value = '';
+        }
+      };
+      
+      reader.onerror = () => {
+        throw new Error('Erreur de lecture du fichier');
+      };
+    } catch (err: any) {
+      console.error("PDF read error:", err);
+      showStatus('error', err.message || 'Erreur lors de la lecture du fichier');
+      setIsImportingPdf(false);
+      e.target.value = '';
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -692,6 +806,25 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleDeleteQuiz = async (quizId: string) => {
+    try {
+      // First delete all questions in the quiz
+      const qRef = collection(db, `quizzes/${quizId}/questions`);
+      const qSnap = await getDocs(qRef);
+      const batch = writeBatch(db);
+      qSnap.docs.forEach(doc => batch.delete(doc.ref));
+      
+      // Then delete the quiz itself
+      batch.delete(doc(db, 'quizzes', quizId));
+      await batch.commit();
+      
+      setShowConfirmDelete(null);
+      showStatus('success', 'Quiz supprimé.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `quizzes/${quizId}`);
+    }
+  };
+
   const seedTestimonials = async () => {
     setIsSeeding(true);
     setShowConfirmDelete(null);
@@ -760,16 +893,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleDeleteQuiz = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'quizzes', id));
-      setShowConfirmDelete(null);
-      showStatus('success', 'Quiz supprimé.');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `quizzes/${id}`);
-    }
-  };
-
   const handleDeleteQuestion = async (quizId: string, questionId: string) => {
     try {
       await deleteDoc(doc(db, `quizzes/${quizId}/questions`, questionId));
@@ -777,6 +900,47 @@ export default function AdminDashboard() {
       showStatus('success', 'Question supprimée.');
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `quizzes/${quizId}/questions/${questionId}`);
+    }
+  };
+
+  const handleMoveQuiz = async (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index > 0) {
+      const newQuizzes = [...quizzes];
+      [newQuizzes[index - 1], newQuizzes[index]] = [newQuizzes[index], newQuizzes[index - 1]];
+      const batch = writeBatch(db);
+      newQuizzes.forEach((q, i) => {
+        batch.update(doc(db, 'quizzes', q.id), { order: i + 1 });
+      });
+      await batch.commit();
+    } else if (direction === 'down' && index < quizzes.length - 1) {
+      const newQuizzes = [...quizzes];
+      [newQuizzes[index + 1], newQuizzes[index]] = [newQuizzes[index], newQuizzes[index + 1]];
+      const batch = writeBatch(db);
+      newQuizzes.forEach((q, i) => {
+        batch.update(doc(db, 'quizzes', q.id), { order: i + 1 });
+      });
+      await batch.commit();
+    }
+  };
+
+  const handleMoveQuestion = async (quizId: string, index: number, direction: 'up' | 'down') => {
+    const questions = questionsByQuiz[quizId] || [];
+    if (direction === 'up' && index > 0) {
+      const newQuestions = [...questions];
+      [newQuestions[index - 1], newQuestions[index]] = [newQuestions[index], newQuestions[index - 1]];
+      const batch = writeBatch(db);
+      newQuestions.forEach((q, i) => {
+        batch.update(doc(db, `quizzes/${quizId}/questions`, q.id), { order: i + 1 });
+      });
+      await batch.commit();
+    } else if (direction === 'down' && index < questions.length - 1) {
+      const newQuestions = [...questions];
+      [newQuestions[index + 1], newQuestions[index]] = [newQuestions[index], newQuestions[index + 1]];
+      const batch = writeBatch(db);
+      newQuestions.forEach((q, i) => {
+        batch.update(doc(db, `quizzes/${quizId}/questions`, q.id), { order: i + 1 });
+      });
+      await batch.commit();
     }
   };
 
@@ -1430,16 +1594,27 @@ export default function AdminDashboard() {
             <h2 className="text-xl font-bold text-zinc-900 flex items-center gap-2">
               <Database className="w-5 h-5" /> Gestion des QCM
             </h2>
-            <button 
-              onClick={() => setEditingQuiz({ title: '', description: '', order: quizzes.length + 1 })}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="w-4 h-4" /> Nouveau Quiz
-            </button>
+            <div className="flex gap-2">
+              <label className={`flex items-center justify-center gap-2 px-4 py-2 ${isImportingPdf ? 'bg-zinc-400 cursor-not-allowed' : 'bg-zinc-800 hover:bg-zinc-700 cursor-pointer'} text-white text-sm font-bold rounded-lg transition-colors`}>
+                {isImportingPdf ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+                {isImportingPdf ? 'Analyse...' : 'Importer PDF'}
+                <input type="file" accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={isImportingPdf} />
+              </label>
+              <button 
+                onClick={() => setEditingQuiz({ title: '', description: '', order: quizzes.length + 1 })}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Nouveau Quiz
+              </button>
+            </div>
           </div>
 
           <div className="grid gap-6">
-            {quizzes.map(quiz => (
+            {quizzes.map((quiz, quizIdx) => (
               <div key={quiz.id} className="bg-white border border-zinc-200 rounded-2xl overflow-hidden shadow-sm">
                 <div className="p-6 flex items-center justify-between bg-zinc-50 border-b border-zinc-200">
                   <div className="flex items-center gap-4">
@@ -1452,10 +1627,26 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <div className="flex flex-col mr-2">
+                      <button 
+                        onClick={() => handleMoveQuiz(quizIdx, 'up')} 
+                        disabled={quizIdx === 0}
+                        className={`p-1 ${quizIdx === 0 ? 'text-zinc-200' : 'text-zinc-400 hover:text-blue-600'} transition-colors`}
+                      >
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleMoveQuiz(quizIdx, 'down')} 
+                        disabled={quizIdx === quizzes.length - 1}
+                        className={`p-1 ${quizIdx === quizzes.length - 1 ? 'text-zinc-200' : 'text-zinc-400 hover:text-blue-600'} transition-colors`}
+                      >
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                    </div>
                     <button onClick={() => setEditingQuiz(quiz)} className="p-2 text-zinc-400 hover:text-blue-600 transition-colors">
                       <Edit2 className="w-4 h-4" />
                     </button>
-                    <button onClick={() => setShowConfirmDelete({ type: 'clear', id: quiz.id })} className="p-2 text-zinc-400 hover:text-red-600 transition-colors">
+                    <button onClick={() => setShowConfirmDelete({ type: 'quiz', id: quiz.id })} className="p-2 text-zinc-400 hover:text-red-600 transition-colors">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -1488,6 +1679,22 @@ export default function AdminDashboard() {
                                   <span className="text-sm font-medium text-zinc-900">{question.text}</span>
                                 </div>
                                 <div className="flex items-center gap-2 ml-4">
+                                  <div className="flex flex-col mr-2">
+                                    <button 
+                                      onClick={() => handleMoveQuestion(quiz.id, idx, 'up')} 
+                                      disabled={idx === 0}
+                                      className={`p-1 ${idx === 0 ? 'text-zinc-200' : 'text-zinc-400 hover:text-blue-600'} transition-colors`}
+                                    >
+                                      <ArrowUp className="w-3 h-3" />
+                                    </button>
+                                    <button 
+                                      onClick={() => handleMoveQuestion(quiz.id, idx, 'down')} 
+                                      disabled={idx === (questionsByQuiz[quiz.id]?.length || 0) - 1}
+                                      className={`p-1 ${idx === (questionsByQuiz[quiz.id]?.length || 0) - 1 ? 'text-zinc-200' : 'text-zinc-400 hover:text-blue-600'} transition-colors`}
+                                    >
+                                      <ArrowDown className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                   <button onClick={() => setEditingQuestion(question)} className="p-1.5 text-zinc-400 hover:text-blue-600 transition-colors">
                                     <Edit2 className="w-3.5 h-3.5" />
                                   </button>
@@ -1890,6 +2097,30 @@ export default function AdminDashboard() {
                     className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-20"
                   />
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Type de pièce jointe</label>
+                    <select 
+                      value={editingQuestion.attachmentType || ''} 
+                      onChange={e => setEditingQuestion({ ...editingQuestion, attachmentType: e.target.value as 'image' | 'pdf' | undefined })}
+                      className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
+                      <option value="">Aucune</option>
+                      <option value="image">Image</option>
+                      <option value="pdf">PDF</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">URL de la pièce jointe</label>
+                    <input 
+                      type="url" 
+                      value={editingQuestion.attachmentUrl || ''} 
+                      onChange={e => setEditingQuestion({ ...editingQuestion, attachmentUrl: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
                 <div className="flex gap-4 pt-4">
                   <button onClick={handleSaveQuestion} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">Enregistrer</button>
                   <button onClick={() => setEditingQuestion(null)} className="flex-1 py-3 bg-zinc-100 text-zinc-600 font-bold rounded-xl hover:bg-zinc-200 transition-colors">Annuler</button>
@@ -2037,6 +2268,8 @@ export default function AdminDashboard() {
                   ? 'Voulez-vous vraiment supprimer cet utilisateur ? Cette action supprimera également son compte d\'authentification.'
                   : showConfirmDelete.type === 'seedTestimonials'
                   ? 'Voulez-vous importer tous les témoignages (59) ? Attention, cela remplacera les témoignages existants.'
+                  : showConfirmDelete.type === 'quiz'
+                  ? 'Voulez-vous vraiment supprimer ce quiz et toutes ses questions ? Cette action est irréversible.'
                   : 'Voulez-vous vraiment supprimer TOUS les modules et cours ? Cette action est irréversible.'}
               </p>
               <div className="flex gap-4">
@@ -2052,6 +2285,8 @@ export default function AdminDashboard() {
                       handleDeleteUser(showConfirmDelete.id!);
                     } else if (showConfirmDelete.type === 'seedTestimonials') {
                       seedTestimonials();
+                    } else if (showConfirmDelete.type === 'quiz') {
+                      handleDeleteQuiz(showConfirmDelete.id!);
                     } else {
                       handleClearAll();
                     }
@@ -2108,6 +2343,36 @@ export default function AdminDashboard() {
                     Ouvrir la Console Firebase Auth
                     <Plus size={18} className="rotate-45" />
                   </a>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-zinc-200 p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                  <Database size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-zinc-900">Réinitialisation des Données</h2>
+                  <p className="text-zinc-500">Restaurez les cours et modules par défaut si vous les avez supprimés par erreur.</p>
+                </div>
+              </div>
+
+              <div className="space-y-4 text-zinc-600">
+                <p>
+                  Cette action va recréer les modules de base (PSV, Radionavigation, etc.) et leurs cours associés. 
+                  Elle ne supprimera pas les cours que vous avez créés vous-même, mais elle rajoutera ceux par défaut.
+                </p>
+                
+                <div className="pt-4">
+                  <button 
+                    onClick={seedInitialData}
+                    disabled={isSeeding}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 disabled:opacity-50"
+                  >
+                    <Database size={18} />
+                    {isSeeding ? 'Restauration en cours...' : 'Réinitialiser les cours par défaut'}
+                  </button>
                 </div>
               </div>
             </div>

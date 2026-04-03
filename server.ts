@@ -11,6 +11,7 @@ import { getAuth as getClientAuth, signInWithEmailAndPassword, createUserWithEma
 import { Resend } from "resend";
 import nodemailer from "nodemailer";
 import fs from "fs";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const firebaseConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8"));
 
@@ -59,7 +60,9 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS,
         },
-      });
+        // Force IPv4 to prevent ENETUNREACH errors on Railway's IPv6 network
+        family: 4
+      } as any);
       
       const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'contact@aviationonline.fr';
       const fromName = process.env.SMTP_FROM || 'Aviation Online';
@@ -328,7 +331,7 @@ async function startServer() {
     res.json({ received: true });
   });
 
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
 
   console.log("Environment:", process.env.NODE_ENV);
   console.log("CWD:", process.cwd());
@@ -341,7 +344,10 @@ async function startServer() {
       status: "ok", 
       env: process.env.NODE_ENV,
       cwd: process.cwd(),
-      distExists: fs.existsSync(path.join(process.cwd(), 'dist'))
+      distExists: fs.existsSync(path.join(process.cwd(), 'dist')),
+      geminiKey: !!process.env.GEMINI_API_KEY,
+      resendKey: !!process.env.RESEND_API_KEY,
+      smtpHost: !!process.env.SMTP_HOST
     });
   });
 
