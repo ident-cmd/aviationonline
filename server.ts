@@ -84,7 +84,7 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
       const resend = getResend();
       const from = process.env.RESEND_FROM || 'Aviation Online <onboarding@resend.dev>';
       
-      if (from.includes('onboarding@resend.dev') && to !== 'contact@aviationonline.net') {
+      if (from.includes('onboarding@resend.dev') && to !== 'ident@aviationonline.fr' && to !== 'contact@aviationonline.net') {
         console.warn(`[EMAIL WARNING] Using Resend onboarding address. Emails to ${to} will likely fail unless this email is verified in your Resend account. Please verify your domain in Resend and set the RESEND_FROM environment variable.`);
       }
 
@@ -360,7 +360,7 @@ async function startServer() {
     try {
       // Verify admin token
       const decodedToken = await auth.verifyIdToken(adminToken);
-      if (decodedToken.email !== 'contact@aviationonline.net') {
+      if (decodedToken.email !== 'ident@aviationonline.fr' && decodedToken.email !== 'contact@aviationonline.net') {
         return res.status(403).json({ error: "Unauthorized" });
       }
 
@@ -440,7 +440,7 @@ async function startServer() {
       const decodedToken = await auth.verifyIdToken(token);
       
       // Only allow specific admin email
-      if (decodedToken.email !== 'contact@aviationonline.net') {
+      if (decodedToken.email !== 'ident@aviationonline.fr' && decodedToken.email !== 'contact@aviationonline.net') {
         return res.status(403).json({ error: "Forbidden" });
       }
 
@@ -600,7 +600,7 @@ async function startServer() {
         return res.status(401).json({ error: "Invalid admin token: " + tokenErr.message });
       }
       
-      if (decodedToken.email !== 'contact@aviationonline.net') {
+      if (decodedToken.email !== 'ident@aviationonline.fr' && decodedToken.email !== 'contact@aviationonline.net') {
         return res.status(403).json({ error: "Unauthorized: You are not the master admin" });
       }
 

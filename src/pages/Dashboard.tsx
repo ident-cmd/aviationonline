@@ -216,7 +216,7 @@ export default function Dashboard() {
               </button>
             </div>
             
-            {notification.debug && (profile?.role === 'admin' || profile?.email === 'contact@aviationonline.net') && (
+            {notification.debug && (profile?.role === 'admin' || (profile?.email === 'ident@aviationonline.fr' || profile?.email === 'contact@aviationonline.net')) && (
               <div className="mt-2 p-3 bg-black/20 rounded-xl text-[10px] font-mono overflow-auto max-h-60">
                 <div className="flex justify-between items-center mb-1 border-b border-white/20 pb-1">
                   <p className="font-bold">DEBUG INFO (Admin Only)</p>
@@ -321,7 +321,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {profile?.email === 'contact@aviationonline.net' && (
+      {(profile?.email === 'ident@aviationonline.fr' || profile?.email === 'contact@aviationonline.net') && (
         <div className="mb-8 p-6 bg-zinc-900 rounded-3xl text-white">
           <div className="flex items-center gap-3 mb-4 border-b border-white/10 pb-4">
             <Shield className="w-6 h-6 text-rose-400" />

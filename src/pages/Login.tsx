@@ -66,7 +66,7 @@ export default function Login() {
         displayName: `${firstName} ${lastName}`
       });
 
-      const isAdminEmail = email === 'contact@aviationonline.net';
+      const isAdminEmail = (email === 'ident@aviationonline.fr' || email === 'contact@aviationonline.net');
       const newProfile = {
         uid: newUser.uid,
         email,
