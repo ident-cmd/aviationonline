@@ -96,6 +96,7 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
         host: smtpHost,
         port: port,
         secure: secure,
+        requireTLS: port === 587,
         tls: {
           servername: servername
         },
@@ -142,15 +143,20 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
         console.warn(`[EMAIL WARNING] Using Resend onboarding address. Emails to ${to} will likely fail unless this email is verified in your Resend account. Please verify your domain in Resend and set the RESEND_FROM environment variable.`);
       }
 
-      await resend.emails.send({
+      const { data, error } = await resend.emails.send({
         from,
         to: Array.isArray(to) ? to : [to],
         subject,
         html,
       });
+
+      if (error) {
+        throw new Error(`Resend API Error: ${error.message}`);
+      }
+
       addLog('info', `Email sent via Resend to ${to}`);
       console.log(`[EMAIL] Successfully sent email via Resend to ${to} (Subject: ${subject})`);
-      return { success: true };
+      return { success: true, data };
     } catch (error: any) {
       addLog('error', `Failed to send email to ${to}`, error.message || error);
       console.error(`[EMAIL ERROR] Failed to send email to ${to} (Subject: ${subject}):`, error);
@@ -398,7 +404,7 @@ async function startServer() {
     console.log("Health check requested");
     res.json({ 
       status: "ok", 
-      version: "1.0.5",
+      version: "1.0.8",
       env: process.env.NODE_ENV,
       cwd: process.cwd(),
       distExists: fs.existsSync(path.join(process.cwd(), 'dist')),
@@ -406,6 +412,10 @@ async function startServer() {
       resendKey: !!process.env.RESEND_API_KEY,
       smtpHost: !!process.env.SMTP_HOST
     });
+  });
+
+  app.get("/api/debug-logs", (req, res) => {
+    res.json(debugLogs);
   });
 
   // Migration API
