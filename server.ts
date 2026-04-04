@@ -54,16 +54,39 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
     if (process.env.SMTP_HOST) {
       addLog('info', 'Using SMTP for email sending');
       
+      let smtpHost = process.env.SMTP_HOST;
+      let servername = process.env.SMTP_HOST;
+      
+      // Force IPv4 resolution for SMTP host to prevent ENETUNREACH on Railway
+      if (smtpHost === 'smtp.hostinger.com') {
+        smtpHost = '172.65.255.143';
+        console.log(`[EMAIL] Hardcoded IPv4 for smtp.hostinger.com: ${smtpHost}`);
+      } else {
+        try {
+          const { lookup } = await import('dns/promises');
+          const lookupResult = await lookup(smtpHost, { family: 4 });
+          if (lookupResult && lookupResult.address) {
+            smtpHost = lookupResult.address;
+            addLog('info', `Resolved SMTP host ${process.env.SMTP_HOST} to IPv4: ${smtpHost}`);
+            console.log(`[EMAIL] Resolved SMTP host ${process.env.SMTP_HOST} to IPv4: ${smtpHost}`);
+          }
+        } catch (dnsErr) {
+          addLog('warn', `Could not resolve IPv4 for ${smtpHost}, falling back to default resolution`, dnsErr);
+          console.warn(`[EMAIL] Could not resolve IPv4 for ${smtpHost}:`, dnsErr);
+        }
+      }
+
       const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
+        host: smtpHost,
         port: parseInt(process.env.SMTP_PORT || '465'),
         secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
+        tls: {
+          servername: servername
+        },
         auth: {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS,
-        },
-        // Force IPv4 to prevent ENETUNREACH errors on Railway's IPv6 network
-        family: 4
+        }
       } as any);
       
       const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'contact@aviationonline.net';
@@ -344,6 +367,7 @@ async function startServer() {
     console.log("Health check requested");
     res.json({ 
       status: "ok", 
+      version: "1.0.3",
       env: process.env.NODE_ENV,
       cwd: process.cwd(),
       distExists: fs.existsSync(path.join(process.cwd(), 'dist')),
