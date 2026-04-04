@@ -1,27 +1,25 @@
 import fetch from 'node-fetch';
 
-async function testProd() {
+async function test() {
   try {
-    console.log("Sending request to production API...");
-    const res = await fetch('https://aviationonline-production.up.railway.app/api/send-quiz-results', {
+    console.log("Sending request to https://aviationonline.net/api/send-quiz-results");
+    const res = await fetch('https://aviationonline.net/api/send-quiz-results', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        userEmail: 'haltoclop@gmail.com',
-        userName: 'Test User Prod',
+        userEmail: 'contact@aviationonline.net',
+        userName: 'Test User',
         quizTitle: 'Test Quiz',
         score: 5,
         totalQuestions: 10,
         percentage: 50
       })
     });
-    
-    const text = await res.text();
-    console.log("Response Status:", res.status);
-    console.log("Response Body:", text);
-  } catch (err) {
-    console.error("Error:", err);
+    const data = await res.json();
+    console.log("Response:", JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error("Error:", e);
   }
 }
 
-testProd();
+test();

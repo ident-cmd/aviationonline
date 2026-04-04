@@ -50,8 +50,13 @@ function getResend(): Resend {
 // Unified Email Sender (SMTP or Resend)
 async function sendEmail({ to, subject, html }: { to: string | string[], subject: string, html: string }) {
   addLog('info', `Attempting to send email to ${to}`, { subject });
-  try {
-    if (process.env.SMTP_HOST) {
+  
+  let smtpFailed = false;
+  let smtpError = null;
+
+  // Try SMTP first if configured
+  if (process.env.SMTP_HOST) {
+    try {
       addLog('info', 'Using SMTP for email sending');
       
       let smtpHost = process.env.SMTP_HOST;
@@ -76,10 +81,21 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
         }
       }
 
+      // Try port 587 instead of 465 if 465 is timing out (common on Railway)
+      let port = parseInt(process.env.SMTP_PORT || '465');
+      let secure = process.env.SMTP_SECURE === 'true' || port === 465;
+      
+      // Force port 587 for Hostinger to bypass Railway's port 465 outbound block
+      if (process.env.SMTP_HOST === 'smtp.hostinger.com') {
+        port = 587;
+        secure = false; // 587 uses STARTTLS, not implicit TLS
+        console.log(`[EMAIL] Forced port 587 and STARTTLS for Hostinger`);
+      }
+
       const transporter = nodemailer.createTransport({
         host: smtpHost,
-        port: parseInt(process.env.SMTP_PORT || '465'),
-        secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
+        port: port,
+        secure: secure,
         tls: {
           servername: servername
         },
@@ -102,7 +118,22 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
       addLog('info', `Email sent via SMTP to ${to}`);
       console.log(`[EMAIL] Successfully sent email via SMTP to ${to} (Subject: ${subject})`);
       return { success: true };
-    } else {
+    } catch (error: any) {
+      smtpFailed = true;
+      smtpError = error;
+      addLog('warn', `SMTP failed, will try fallback if available`, error.message || error);
+      console.warn(`[EMAIL WARNING] SMTP failed to ${to}:`, error.message);
+    }
+  }
+
+  // Fallback to Resend if SMTP failed or wasn't configured
+  if (!process.env.SMTP_HOST || smtpFailed) {
+    try {
+      if (!process.env.RESEND_API_KEY) {
+        if (smtpFailed) throw smtpError; // Rethrow SMTP error if no fallback
+        throw new Error("No email service configured (neither SMTP nor Resend)");
+      }
+
       addLog('info', 'Using Resend for email sending');
       const resend = getResend();
       const from = process.env.RESEND_FROM || 'Aviation Online <onboarding@resend.dev>';
@@ -120,11 +151,11 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
       addLog('info', `Email sent via Resend to ${to}`);
       console.log(`[EMAIL] Successfully sent email via Resend to ${to} (Subject: ${subject})`);
       return { success: true };
+    } catch (error: any) {
+      addLog('error', `Failed to send email to ${to}`, error.message || error);
+      console.error(`[EMAIL ERROR] Failed to send email to ${to} (Subject: ${subject}):`, error);
+      throw error;
     }
-  } catch (error: any) {
-    addLog('error', `Failed to send email to ${to}`, error.message || error);
-    console.error(`[EMAIL ERROR] Failed to send email to ${to} (Subject: ${subject}):`, error);
-    throw error;
   }
 }
 
@@ -367,7 +398,7 @@ async function startServer() {
     console.log("Health check requested");
     res.json({ 
       status: "ok", 
-      version: "1.0.3",
+      version: "1.0.5",
       env: process.env.NODE_ENV,
       cwd: process.cwd(),
       distExists: fs.existsSync(path.join(process.cwd(), 'dist')),
