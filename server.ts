@@ -81,16 +81,9 @@ async function sendEmail({ to, subject, html }: { to: string | string[], subject
         }
       }
 
-      // Try port 587 instead of 465 if 465 is timing out (common on Railway)
-      let port = parseInt(process.env.SMTP_PORT || '465');
-      let secure = process.env.SMTP_SECURE === 'true' || port === 465;
-      
-      // Force port 587 for Hostinger to bypass Railway's port 465 outbound block
-      if (process.env.SMTP_HOST === 'smtp.hostinger.com') {
-        port = 587;
-        secure = false; // 587 uses STARTTLS, not implicit TLS
-        console.log(`[EMAIL] Forced port 587 and STARTTLS for Hostinger`);
-      }
+      // Use environment variables for port and secure settings
+      const port = parseInt(process.env.SMTP_PORT || '465');
+      const secure = process.env.SMTP_SECURE === 'true' || port === 465;
 
       const transporter = nodemailer.createTransport({
         host: smtpHost,
@@ -404,7 +397,7 @@ async function startServer() {
     console.log("Health check requested");
     res.json({ 
       status: "ok", 
-      version: "1.0.8",
+      version: "1.0.9",
       env: process.env.NODE_ENV,
       cwd: process.cwd(),
       distExists: fs.existsSync(path.join(process.cwd(), 'dist')),
