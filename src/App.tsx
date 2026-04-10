@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Link, useNavigate } f
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
 import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc, Timestamp, collection, query, orderBy, onSnapshot, getDocFromServer } from 'firebase/firestore';
-import { LogIn, LogOut, BookOpen, Shield, CreditCard, Menu, X, ChevronRight, Plane, Radio, Map, FileText, Settings, Users, AlertCircle } from 'lucide-react';
+import { LogIn, LogOut, BookOpen, Shield, CreditCard, Menu, X, ChevronRight, Plane, Radio, Map, FileText, Settings, Users, AlertCircle, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -15,6 +15,7 @@ import LegalMentions from './pages/LegalMentions';
 import TermsOfService from './pages/TermsOfService';
 import QCM from './pages/QCM';
 import Testimonials from './pages/Testimonials';
+import { LanguageProvider, useLanguage } from './LanguageContext';
 
 export interface UserProfile {
   uid: string;
@@ -53,6 +54,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useLanguage();
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
@@ -156,7 +158,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                   console.log("Admin profile created successfully");
                   setProfile(newProfile);
                 } catch (setErr: any) {
-                  console.error("Failed to create admin profile:", setErr);
+                  console.error("Failed to create admin profile:", setErr instanceof Error ? setErr.message : String(setErr));
                   setProfile(newProfile); // Grant access in state anyway
                 }
               } else {
@@ -175,13 +177,13 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                   console.log("Existing user without profile, logging out");
                   setProfile(null);
                   await auth.signOut();
-                  setError("Votre compte a été supprimé ou n'existe plus.");
+                  setError(t('auth.error.deleted'));
                 }
               }
             }
           } catch (err: any) {
-            console.error("Profile sync error:", err);
-            setError(err.message || "Erreur lors de la synchronisation du profil.");
+            console.error("Profile sync error:", err instanceof Error ? err.message : String(err));
+            setError(err.message || t('auth.error.sync'));
           } finally {
             // Only set loading to false if we have a profile or an error, 
             // or if we're not waiting for a new user's profile to be created
@@ -193,7 +195,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             }
           }
         }, (err) => {
-          console.error("Profile snapshot error:", err);
+          console.error("Profile snapshot error:", err instanceof Error ? err.message : String(err));
           const isAdminEmail = (user.email === 'ident@aviationonline.fr' || user.email === 'contact@aviationonline.net');
           if (isAdminEmail) {
             console.log("Admin profile read failed, but attempting to proceed as admin");
@@ -213,7 +215,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             setLoading(false);
             clearTimeout(timeoutId);
           } else {
-            setError("Impossible de lire votre profil. Vérifiez vos permissions.");
+            setError(t('auth.error.read'));
             setLoading(false);
             clearTimeout(timeoutId);
           }
@@ -224,8 +226,8 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         clearTimeout(timeoutId);
       }
     }, (err) => {
-      console.error("Auth state change error:", err);
-      setError("Erreur d'authentification.");
+      console.error("Auth state change error:", err instanceof Error ? err.message : String(err));
+      setError(t('auth.error.auth'));
       setLoading(false);
       clearTimeout(timeoutId);
     });
@@ -282,8 +284,8 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setError(null);
       await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
-      console.error("Sign in error:", err);
-      setError("Échec de la connexion Google.");
+      console.error("Sign in error:", err instanceof Error ? err.message : String(err));
+      setError(t('auth.error.google'));
     }
   };
 
@@ -291,7 +293,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await signOut(auth);
     } catch (err: any) {
-      console.error("Logout error:", err);
+      console.error("Logout error:", err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -304,6 +306,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
 const ProtectedRoute = ({ children, requirePaid = false, requireAdmin = false }: { children: React.ReactNode, requirePaid?: boolean, requireAdmin?: boolean }) => {
   const { user, profile, loading, error } = useAuth();
+  const { t } = useLanguage();
   
   if (error) {
     return (
@@ -311,13 +314,13 @@ const ProtectedRoute = ({ children, requirePaid = false, requireAdmin = false }:
         <div className="w-16 h-16 bg-rose-100 rounded-2xl flex items-center justify-center mb-6">
           <AlertCircle className="w-8 h-8 text-rose-600" />
         </div>
-        <h1 className="text-xl font-bold text-zinc-900 mb-2">Erreur de connexion</h1>
+        <h1 className="text-xl font-bold text-zinc-900 mb-2">{t('app.error.title')}</h1>
         <p className="text-zinc-600 max-w-md mb-8">{error}</p>
         <button 
           onClick={() => window.location.reload()} 
           className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
         >
-          Réessayer
+          {t('app.error.retry')}
         </button>
       </div>
     );
@@ -326,7 +329,7 @@ const ProtectedRoute = ({ children, requirePaid = false, requireAdmin = false }:
   if (loading) return (
     <div className="h-screen flex flex-col items-center justify-center bg-zinc-50">
       <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-      <p className="text-zinc-500 font-medium">Chargement de votre session...</p>
+      <p className="text-zinc-500 font-medium">{t('app.loading')}</p>
     </div>
   );
   if (!user) return <Navigate to="/login" />;
@@ -338,6 +341,8 @@ const ProtectedRoute = ({ children, requirePaid = false, requireAdmin = false }:
 const Navbar = () => {
   const { user, profile, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [showEnTooltip, setShowEnTooltip] = useState(false);
+  const { language, setLanguage, t } = useLanguage();
 
   return (
     <nav className="bg-white border-b border-zinc-200 sticky top-0 z-50">
@@ -351,35 +356,101 @@ const Navbar = () => {
           </div>
 
           <div className="hidden md:flex items-center gap-8">
-            <Link to="/" className="text-zinc-600 hover:text-zinc-900 text-sm font-medium">Accueil</Link>
-            <Link to="/testimonials" className="text-zinc-600 hover:text-zinc-900 text-sm font-medium">Témoignages</Link>
+            <Link to="/" className="text-zinc-600 hover:text-zinc-900 text-sm font-medium">{t('nav.home')}</Link>
+            <Link to="/testimonials" className="text-zinc-600 hover:text-zinc-900 text-sm font-medium">{t('nav.testimonials')}</Link>
             {user && (
               <>
-                <Link to="/dashboard" className="text-zinc-600 hover:text-zinc-900 text-sm font-medium">Cours</Link>
+                <Link to="/dashboard" className="text-zinc-600 hover:text-zinc-900 text-sm font-medium">{t('nav.courses')}</Link>
                 {(profile?.isPaid || profile?.role === 'admin') && (
                   <Link to="/qcm" className="text-blue-600 hover:text-blue-700 text-sm font-bold flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-blue-100">
-                    <Radio className="w-4 h-4" /> QCM
+                    <Radio className="w-4 h-4" /> {t('nav.qcm')}
                   </Link>
                 )}
                 {profile?.role === 'admin' && (
                   <Link to="/admin" className="text-zinc-600 hover:text-zinc-900 text-sm font-medium flex items-center gap-1">
-                    <Shield className="w-4 h-4" /> Admin
+                    <Shield className="w-4 h-4" /> {t('nav.admin')}
                   </Link>
                 )}
               </>
             )}
+            
+            <div className="flex items-center gap-2 border-l border-zinc-200 pl-4 ml-2">
+              <button 
+                onClick={() => setLanguage('fr')} 
+                className={`text-xs font-bold px-2 py-1 rounded ${language === 'fr' ? 'bg-blue-100 text-blue-700' : 'text-zinc-500 hover:bg-zinc-100'}`}
+              >
+                FR
+              </button>
+              <div className="relative flex items-center">
+                <button 
+                  onClick={() => {
+                    setShowEnTooltip(true);
+                    setTimeout(() => setShowEnTooltip(false), 3000);
+                  }} 
+                  className={`text-xs font-bold px-2 py-1 rounded ${language === 'en' ? 'bg-blue-100 text-blue-700' : 'text-zinc-500 hover:bg-zinc-100'}`}
+                >
+                  EN
+                </button>
+                <AnimatePresence>
+                  {showEnTooltip && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 5 }}
+                      className="absolute top-full right-0 mt-2 px-3 py-2 bg-zinc-800 text-white text-xs rounded-lg shadow-lg whitespace-nowrap z-50"
+                    >
+                      prochainement version en anglais sera disponible
+                      <div className="absolute -top-1 right-3 border-4 border-transparent border-b-zinc-800"></div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
             {user ? (
               <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 rounded-lg transition-colors">
-                <LogOut className="w-4 h-4" /> Déconnexion
+                <LogOut className="w-4 h-4" /> {t('nav.logout')}
               </button>
             ) : (
               <Link to="/login" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
-                Connexion
+                {t('nav.login')}
               </Link>
             )}
           </div>
 
-          <div className="md:hidden flex items-center">
+          <div className="md:hidden flex items-center gap-4">
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={() => setLanguage('fr')} 
+                className={`text-xs font-bold px-2 py-1 rounded ${language === 'fr' ? 'bg-blue-100 text-blue-700' : 'text-zinc-500'}`}
+              >
+                FR
+              </button>
+              <div className="relative flex items-center">
+                <button 
+                  onClick={() => {
+                    setShowEnTooltip(true);
+                    setTimeout(() => setShowEnTooltip(false), 3000);
+                  }} 
+                  className={`text-xs font-bold px-2 py-1 rounded ${language === 'en' ? 'bg-blue-100 text-blue-700' : 'text-zinc-500'}`}
+                >
+                  EN
+                </button>
+                <AnimatePresence>
+                  {showEnTooltip && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 5 }}
+                      className="absolute top-full right-0 mt-2 px-3 py-2 bg-zinc-800 text-white text-xs rounded-lg shadow-lg whitespace-nowrap z-50"
+                    >
+                      prochainement version en anglais sera disponible
+                      <div className="absolute -top-1 right-3 border-4 border-transparent border-b-zinc-800"></div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
             <button onClick={() => setIsOpen(!isOpen)} className="text-zinc-600">
               {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -395,25 +466,25 @@ const Navbar = () => {
             exit={{ opacity: 0, y: -10 }}
             className="md:hidden bg-white border-b border-zinc-200 px-4 pt-2 pb-6 flex flex-col gap-4"
           >
-            <Link to="/" onClick={() => setIsOpen(false)} className="text-zinc-600 text-lg font-medium">Accueil</Link>
-            <Link to="/testimonials" onClick={() => setIsOpen(false)} className="text-zinc-600 text-lg font-medium">Témoignages</Link>
+            <Link to="/" onClick={() => setIsOpen(false)} className="text-zinc-600 text-lg font-medium">{t('nav.home')}</Link>
+            <Link to="/testimonials" onClick={() => setIsOpen(false)} className="text-zinc-600 text-lg font-medium">{t('nav.testimonials')}</Link>
             {user && (
               <>
-                <Link to="/dashboard" onClick={() => setIsOpen(false)} className="text-zinc-600 text-lg font-medium">Cours</Link>
+                <Link to="/dashboard" onClick={() => setIsOpen(false)} className="text-zinc-600 text-lg font-medium">{t('nav.courses')}</Link>
                 {(profile?.isPaid || profile?.role === 'admin') && (
                   <Link to="/qcm" onClick={() => setIsOpen(false)} className="text-blue-600 text-lg font-bold flex items-center gap-2 bg-blue-50 p-3 rounded-xl">
-                    <Radio className="w-5 h-5" /> QCM
+                    <Radio className="w-5 h-5" /> {t('nav.qcm')}
                   </Link>
                 )}
                 {profile?.role === 'admin' && (
-                  <Link to="/admin" onClick={() => setIsOpen(false)} className="text-zinc-600 text-lg font-medium">Admin</Link>
+                  <Link to="/admin" onClick={() => setIsOpen(false)} className="text-zinc-600 text-lg font-medium">{t('nav.admin')}</Link>
                 )}
               </>
             )}
             {user ? (
-              <button onClick={() => { logout(); setIsOpen(false); }} className="text-left text-zinc-600 text-lg font-medium">Déconnexion</button>
+              <button onClick={() => { logout(); setIsOpen(false); }} className="text-left text-zinc-600 text-lg font-medium">{t('nav.logout')}</button>
             ) : (
-              <Link to="/login" onClick={() => setIsOpen(false)} className="text-blue-600 text-lg font-medium">Connexion</Link>
+              <Link to="/login" onClick={() => setIsOpen(false)} className="text-blue-600 text-lg font-medium">{t('nav.login')}</Link>
             )}
           </motion.div>
         )}
@@ -424,6 +495,7 @@ const Navbar = () => {
 
 const Footer = () => {
   const [modules, setModules] = useState<any[]>([]);
+  const { t, language } = useLanguage();
 
   useEffect(() => {
     const q = query(collection(db, 'modules'), orderBy('order', 'asc'));
@@ -443,16 +515,15 @@ const Footer = () => {
               <span className="text-lg font-bold tracking-tight">AVIATION ONLINE</span>
             </div>
             <p className="text-sm leading-relaxed">
-              Formation IFR professionnelle pour pilotes PPL et CPL. 
-              Maîtrisez le pilotage sans visibilité avec une pédagogie adaptée.
+              {t('footer.desc')}
             </p>
           </div>
           <div>
-            <h4 className="text-white font-bold mb-4">Modules</h4>
+            <h4 className="text-white font-bold mb-4">{t('footer.modules')}</h4>
             <ul className="text-sm space-y-2">
               {modules.length > 0 ? (
                 modules.slice(0, 5).map(m => (
-                  <li key={m.id}>{m.title}</li>
+                  <li key={m.id}>{language === 'en' && m.title_en ? m.title_en : m.title}</li>
                 ))
               ) : (
                 <>
@@ -465,16 +536,16 @@ const Footer = () => {
             </ul>
           </div>
           <div>
-            <h4 className="text-white font-bold mb-4">Contact</h4>
+            <h4 className="text-white font-bold mb-4">{t('footer.contact')}</h4>
             <a href="mailto:contact@aviationonline.net" target="_blank" rel="noopener noreferrer" className="text-sm hover:text-white transition-colors">contact@aviationonline.net</a>
             <p className="text-sm mt-2">Expertise aéronautique et pédagogie IFR.</p>
           </div>
         </div>
         <div className="border-t border-zinc-800 mt-12 pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
-          <div>© 2026 Aviation Online. Tous droits réservés.</div>
+          <div>{t('footer.rights')}</div>
           <div className="flex gap-6">
-            <Link to="/legal" className="hover:text-white transition-colors">Mentions Légales</Link>
-            <Link to="/terms" className="hover:text-white transition-colors">CGU</Link>
+            <Link to="/legal" className="hover:text-white transition-colors">{t('footer.legal')}</Link>
+            <Link to="/terms" className="hover:text-white transition-colors">{t('footer.terms')}</Link>
           </div>
         </div>
       </div>
@@ -493,25 +564,29 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("Uncaught error:", error, errorInfo);
+    console.error("Uncaught error:", error instanceof Error ? error.message : String(error), errorInfo);
   }
 
   render() {
     if (this.state.hasError) {
+      const lang = localStorage.getItem('language') || 'fr';
+      const isEn = lang === 'en';
       return (
         <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center bg-zinc-50">
           <div className="w-16 h-16 bg-rose-100 rounded-2xl flex items-center justify-center mb-6">
             <AlertCircle className="w-8 h-8 text-rose-600" />
           </div>
-          <h1 className="text-2xl font-bold text-zinc-900 mb-2">Oups ! Quelque chose s'est mal passé.</h1>
+          <h1 className="text-2xl font-bold text-zinc-900 mb-2">
+            {isEn ? 'Oops! Something went wrong.' : 'Oups ! Quelque chose s\'est mal passé.'}
+          </h1>
           <p className="text-zinc-600 max-w-md mb-8">
-            {this.state.error?.message || "Une erreur inattendue est survenue."}
+            {this.state.error?.message || (isEn ? 'An unexpected error occurred.' : 'Une erreur inattendue est survenue.')}
           </p>
           <button 
             onClick={() => window.location.reload()} 
             className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
           >
-            Recharger la page
+            {isEn ? 'Reload page' : 'Recharger la page'}
           </button>
         </div>
       );
@@ -541,29 +616,31 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <Router>
-          <div className="min-h-screen bg-zinc-100 font-sans">
-            <Navbar />
-            <main>
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                <Route path="/qcm" element={<ProtectedRoute requirePaid><QCM /></ProtectedRoute>} />
-                <Route path="/admin" element={<ProtectedRoute requireAdmin><AdminDashboard /></ProtectedRoute>} />
-                <Route path="/course/:moduleId/:courseId" element={<ProtectedRoute requirePaid><CourseView /></ProtectedRoute>} />
-                <Route path="/payment" element={<ProtectedRoute><Payment /></ProtectedRoute>} />
-                <Route path="/legal" element={<LegalMentions />} />
-                <Route path="/terms" element={<TermsOfService />} />
-                <Route path="/testimonials" element={<Testimonials />} />
-                <Route path="*" element={<Navigate to="/" />} />
-              </Routes>
-            </main>
-            <Footer />
-          </div>
-        </Router>
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <Router>
+            <div className="min-h-screen bg-zinc-100 font-sans">
+              <Navbar />
+              <main>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/qcm" element={<ProtectedRoute requirePaid><QCM /></ProtectedRoute>} />
+                  <Route path="/admin" element={<ProtectedRoute requireAdmin><AdminDashboard /></ProtectedRoute>} />
+                  <Route path="/course/:moduleId/:courseId" element={<ProtectedRoute requirePaid><CourseView /></ProtectedRoute>} />
+                  <Route path="/payment" element={<ProtectedRoute><Payment /></ProtectedRoute>} />
+                  <Route path="/legal" element={<LegalMentions />} />
+                  <Route path="/terms" element={<TermsOfService />} />
+                  <Route path="/testimonials" element={<Testimonials />} />
+                  <Route path="*" element={<Navigate to="/" />} />
+                </Routes>
+              </main>
+              <Footer />
+            </div>
+          </Router>
+        </AuthProvider>
+      </LanguageProvider>
     </ErrorBoundary>
   );
 }

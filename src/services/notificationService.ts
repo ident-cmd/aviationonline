@@ -9,10 +9,10 @@ export const notificationService = {
       const data = await response.json();
       console.log('Welcome email response:', response.status, data);
       if (!response.ok) {
-        console.error('Failed to send welcome email (server error):', data);
+        console.error('Failed to send welcome email (server error):', data instanceof Error ? data.message : String(data));
       }
     } catch (error) {
-      console.error('Failed to send welcome email (network error):', error);
+      console.error('Failed to send welcome email (network error):', error instanceof Error ? error.message : String(error));
     }
   },
   

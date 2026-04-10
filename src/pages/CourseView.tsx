@@ -5,11 +5,14 @@ import { getDoc, collection, query, orderBy, onSnapshot, getDocs, doc } from 'fi
 import ReactMarkdown from 'react-markdown';
 import { ChevronLeft, ChevronRight, BookOpen, Clock, CheckCircle2, FileText, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useLanguage } from '../LanguageContext';
 
 interface Course {
   id: string;
   title: string;
+  title_en?: string;
   content: string;
+  content_en?: string;
   pdfUrl?: string;
   order: number;
 }
@@ -17,11 +20,13 @@ interface Course {
 interface Module {
   id: string;
   title: string;
+  title_en?: string;
 }
 
 export default function CourseView() {
   const { moduleId, courseId } = useParams();
   const navigate = useNavigate();
+  const { t, language } = useLanguage();
   const [course, setCourse] = useState<Course | null>(null);
   const [module, setModule] = useState<Module | null>(null);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
@@ -52,12 +57,43 @@ export default function CourseView() {
     fetchContent();
   }, [moduleId, courseId]);
 
-  if (loading) return <div className="p-8 text-center">Chargement du cours...</div>;
-  if (!course) return <div className="p-8 text-center">Cours non trouvé.</div>;
+  if (loading) return <div className="p-8 text-center">{t('course.loading')}</div>;
+  if (!course) return <div className="p-8 text-center">{t('course.not_found')}</div>;
 
   const currentIndex = allCourses.findIndex(c => c.id === courseId);
   const prevCourse = allCourses[currentIndex - 1];
   const nextCourse = allCourses[currentIndex + 1];
+
+  const getEmbedUrl = (url: string) => {
+    if (!url) return '';
+    // Google Drive
+    if (url.includes('drive.google.com')) {
+      return url.replace('/view', '/preview').replace('file/d/', 'file/d/').split('?')[0] + '?authuser';
+    }
+    // Dropbox
+    if (url.includes('dropbox.com')) {
+      return url.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '').replace('?dl=1', '');
+    }
+    return url;
+  };
+
+  const getDirectImageUrl = (url: string) => {
+    if (!url) return '';
+    const cleanUrl = url.trim();
+    // Google Drive
+    if (cleanUrl.includes('drive.google.com') || cleanUrl.includes('docs.google.com')) {
+      const fileId = cleanUrl.match(/\/d\/([^/]+)/)?.[1] || cleanUrl.match(/id=([^&]+)/)?.[1];
+      if (fileId) {
+        // Method 1: User Content (most common for direct)
+        return `https://drive.google.com/uc?export=view&id=${fileId}`;
+      }
+    }
+    // Dropbox
+    if (cleanUrl.includes('dropbox.com')) {
+      return cleanUrl.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '').replace('?dl=1', '');
+    }
+    return cleanUrl;
+  };
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -65,12 +101,12 @@ export default function CourseView() {
       <div className="bg-zinc-100 border-b border-zinc-200 py-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <Link to="/dashboard" className="inline-flex items-center gap-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 mb-6 transition-colors">
-            <ChevronLeft className="w-4 h-4" /> Retour au tableau de bord
+            <ChevronLeft className="w-4 h-4" /> {t('course.back')}
           </Link>
           <div className="flex items-center gap-3 text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">
-            <BookOpen className="w-4 h-4" /> {module?.title}
+            <BookOpen className="w-4 h-4" /> {language === 'en' && module?.title_en ? module.title_en : module?.title}
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-zinc-900 tracking-tight">{course.title}</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-zinc-900 tracking-tight">{language === 'en' && course.title_en ? course.title_en : course.title}</h1>
         </div>
       </div>
 
@@ -82,7 +118,35 @@ export default function CourseView() {
           className="prose prose-zinc prose-lg max-w-none"
         >
           <div className="markdown-body mb-12">
-            <ReactMarkdown>{course.content}</ReactMarkdown>
+            <ReactMarkdown
+              components={{
+                img: ({ node, ...props }) => (
+                  <img 
+                    {...props} 
+                    key={props.src}
+                    src={getDirectImageUrl(props.src || '')}
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      const originalSrc = props.src || '';
+                      if (originalSrc.includes('drive.google.com') || originalSrc.includes('docs.google.com')) {
+                        const fileId = originalSrc.match(/\/d\/([^/]+)/)?.[1] || originalSrc.match(/id=([^&]+)/)?.[1];
+                        if (fileId) {
+                          if (!target.src.includes('thumbnail')) {
+                            target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+                          } else if (!target.src.includes('lh3.googleusercontent.com')) {
+                            target.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+                          }
+                        }
+                      }
+                    }}
+                    referrerPolicy="no-referrer" 
+                    className="rounded-xl border border-zinc-200 shadow-sm max-w-full h-auto mx-auto block my-8" 
+                  />
+                )
+              }}
+            >
+              {language === 'en' && course.content_en ? course.content_en : course.content}
+            </ReactMarkdown>
           </div>
 
           {course.pdfUrl && (
@@ -91,7 +155,7 @@ export default function CourseView() {
                 <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
                   <FileText className="w-5 h-5 text-blue-600" />
                 </div>
-                <h3 className="text-xl font-bold text-zinc-900">Support de cours</h3>
+                <h3 className="text-xl font-bold text-zinc-900">{t('course.support')}</h3>
               </div>
               
               <div className="relative bg-zinc-900 rounded-[2rem] overflow-hidden shadow-2xl border border-zinc-200 group">
@@ -103,7 +167,7 @@ export default function CourseView() {
                 
                 <div className="w-full h-[500px] md:h-[850px] bg-zinc-100">
                   <iframe 
-                    src={`${course.pdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`} 
+                    src={`${getEmbedUrl(course.pdfUrl)}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`} 
                     className="w-full h-full border-none"
                     title="Lecteur de formation"
                   />
@@ -112,7 +176,7 @@ export default function CourseView() {
                 <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
               </div>
               <p className="mt-4 text-sm text-zinc-400 italic flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" /> Consultation en ligne uniquement pour des raisons de sécurité.
+                <AlertCircle className="w-4 h-4" /> {t('course.security')}
               </p>
             </div>
           )}
@@ -129,8 +193,8 @@ export default function CourseView() {
                 <ChevronLeft className="w-6 h-6" />
               </div>
               <div className="text-left">
-                <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Précédent</div>
-                <div className="text-sm font-bold text-zinc-900">{prevCourse.title}</div>
+                <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest">{t('course.prev')}</div>
+                <div className="text-sm font-bold text-zinc-900">{language === 'en' && prevCourse.title_en ? prevCourse.title_en : prevCourse.title}</div>
               </div>
             </Link>
           ) : <div />}
@@ -141,8 +205,8 @@ export default function CourseView() {
               className="w-full sm:w-auto flex items-center gap-4 p-4 rounded-2xl border border-zinc-200 hover:border-blue-500 transition-all group text-right"
             >
               <div className="text-right">
-                <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Suivant</div>
-                <div className="text-sm font-bold text-zinc-900">{nextCourse.title}</div>
+                <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest">{t('course.next')}</div>
+                <div className="text-sm font-bold text-zinc-900">{language === 'en' && nextCourse.title_en ? nextCourse.title_en : nextCourse.title}</div>
               </div>
               <div className="w-10 h-10 bg-zinc-50 rounded-xl flex items-center justify-center text-zinc-400 group-hover:text-blue-600 transition-colors">
                 <ChevronRight className="w-6 h-6" />
@@ -154,8 +218,8 @@ export default function CourseView() {
               className="w-full sm:w-auto flex items-center gap-4 p-4 rounded-2xl bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
             >
               <div className="text-right">
-                <div className="text-xs font-bold opacity-80 uppercase tracking-widest">Module terminé</div>
-                <div className="text-sm font-bold">Retour au dashboard</div>
+                <div className="text-xs font-bold opacity-80 uppercase tracking-widest">{t('course.finished')}</div>
+                <div className="text-sm font-bold">{t('course.back_dashboard')}</div>
               </div>
               <CheckCircle2 className="w-6 h-6" />
             </Link>

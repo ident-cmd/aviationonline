@@ -4,33 +4,72 @@ import { motion } from 'motion/react';
 import { Plane, Shield, BookOpen, Users, ChevronRight, CheckCircle2, Radio, FileText, Map, Award, Quote, GraduationCap, Star } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { useLanguage } from '../LanguageContext';
 
 interface Module {
   id: string;
   title: string;
+  title_en?: string;
   description: string;
+  description_en?: string;
+  order: number;
+}
+
+interface Course {
+  id: string;
+  title: string;
+  title_en?: string;
   order: number;
 }
 
 interface Testimonial {
   id: string;
   text: string;
+  text_en?: string;
   author: string;
   role: string;
+  role_en?: string;
   rating: number;
   order: number;
 }
 
 export default function Home() {
   const [modules, setModules] = useState<Module[]>([]);
+  const [coursesByModule, setCoursesByModule] = useState<Record<string, Course[]>>({});
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const { t, language } = useLanguage();
 
   useEffect(() => {
     const qModules = query(collection(db, 'modules'));
+    const courseUnsubscribes: Record<string, () => void> = {};
+
     const unsubscribeModules = onSnapshot(qModules, (snapshot) => {
       const mods = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Module));
       const sortedMods = mods.sort((a, b) => (a.order || 999) - (b.order || 999));
       setModules(sortedMods);
+
+      // Clean up old course listeners
+      const currentModuleIds = new Set(sortedMods.map(m => m.id));
+      Object.keys(courseUnsubscribes).forEach(id => {
+        if (!currentModuleIds.has(id)) {
+          courseUnsubscribes[id]();
+          delete courseUnsubscribes[id];
+        }
+      });
+
+      // Set up listeners for new modules
+      sortedMods.forEach(mod => {
+        if (!courseUnsubscribes[mod.id]) {
+          const cq = query(collection(db, `modules/${mod.id}/courses`));
+          courseUnsubscribes[mod.id] = onSnapshot(cq, (cSnapshot) => {
+            setCoursesByModule(prev => ({
+              ...prev,
+              [mod.id]: cSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Course))
+                .sort((a, b) => (a.order || 999) - (b.order || 999))
+            }));
+          }, (err) => handleFirestoreError(err, OperationType.LIST, `modules/${mod.id}/courses`));
+        }
+      });
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'modules'));
 
     const qTestimonials = query(collection(db, 'testimonials'));
@@ -43,6 +82,7 @@ export default function Home() {
     return () => {
       unsubscribeModules();
       unsubscribeTestimonials();
+      Object.values(courseUnsubscribes).forEach(unsub => unsub());
     };
   }, []);
 
@@ -73,19 +113,17 @@ export default function Home() {
             transition={{ duration: 0.8 }}
           >
             <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold text-white tracking-tight mb-6">
-              Maîtrisez le <span className="text-blue-500 italic">Vol et les Procédures IFR</span>
+              {t('home.hero.title1')} <span className="text-blue-500 italic">{t('home.hero.title2')}</span>
             </h1>
             <p className="text-lg md:text-xl text-zinc-300 max-w-4xl mx-auto mb-10 leading-relaxed">
-              La plateforme de référence pour les pilotes envisageant ou en cours de formation pratique IR, 
-              ainsi que pour les pilotes qualifiés souhaitant maintenir leur niveau pour une prorogation 
-              ou une sélection compagnie.
+              {t('home.hero.desc')}
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link to="/login" className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all transform hover:scale-105 flex items-center justify-center gap-2">
-                Commencer la formation <ChevronRight className="w-5 h-5" />
+                {t('home.hero.start')} <ChevronRight className="w-5 h-5" />
               </Link>
               <a href="#pricing" className="px-8 py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl backdrop-blur-sm transition-all flex items-center justify-center gap-2">
-                Accès complet à 79€
+                {t('home.hero.price')}
               </a>
             </div>
           </motion.div>
@@ -100,27 +138,27 @@ export default function Home() {
               <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-6">
                 <Shield className="w-6 h-6 text-blue-600" />
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-4">Expertise Instructeur</h3>
+              <h3 className="text-xl font-bold text-zinc-900 mb-4">{t('home.features.1.title')}</h3>
               <p className="text-zinc-600 leading-relaxed">
-                Formation conçue par un instructeur expert avec plus de 30 ans d'expérience en ATO.
+                {t('home.features.1.desc')}
               </p>
             </div>
             <div className="p-8 rounded-2xl bg-zinc-50 border border-zinc-100 hover:shadow-xl transition-shadow">
               <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center mb-6">
                 <BookOpen className="w-6 h-6 text-emerald-600" />
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-4">Pédagogie IFR</h3>
+              <h3 className="text-xl font-bold text-zinc-900 mb-4">{t('home.features.2.title')}</h3>
               <p className="text-zinc-600 leading-relaxed">
-                Une approche structurée pour maîtriser le pilotage sans visibilité et réussir vos sélections en compagnie aérienne.
+                {t('home.features.2.desc')}
               </p>
             </div>
             <div className="p-8 rounded-2xl bg-zinc-50 border border-zinc-100 hover:shadow-xl transition-shadow">
               <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-6">
                 <Users className="w-6 h-6 text-purple-600" />
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-4">Succès Étudiants</h3>
+              <h3 className="text-xl font-bold text-zinc-900 mb-4">{t('home.features.3.title')}</h3>
               <p className="text-zinc-600 leading-relaxed">
-                Des centaines de pilotes formés qui volent aujourd'hui en compagnie grâce à mes méthodes éprouvées.
+                {t('home.features.3.desc')}
               </p>
             </div>
           </div>
@@ -138,7 +176,7 @@ export default function Home() {
               className="flex flex-col items-center"
             >
               <div className="text-4xl font-black text-blue-500 mb-2">+500</div>
-              <div className="text-zinc-400 uppercase tracking-widest text-xs font-bold">Slides de cours</div>
+              <div className="text-zinc-400 uppercase tracking-widest text-xs font-bold">{t('home.stats.slides')}</div>
             </motion.div>
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
@@ -148,7 +186,7 @@ export default function Home() {
               className="flex flex-col items-center border-y md:border-y-0 md:border-x border-zinc-800 py-8 md:py-0"
             >
               <div className="text-4xl font-black text-blue-500 mb-2">11h</div>
-              <div className="text-zinc-400 uppercase tracking-widest text-xs font-bold">Vidéos pédagogiques</div>
+              <div className="text-zinc-400 uppercase tracking-widest text-xs font-bold">{t('home.stats.video')}</div>
             </motion.div>
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
@@ -158,7 +196,7 @@ export default function Home() {
               className="flex flex-col items-center"
             >
               <div className="text-4xl font-black text-blue-500 mb-2">260</div>
-              <div className="text-zinc-400 uppercase tracking-widest text-xs font-bold">Questions de QCM</div>
+              <div className="text-zinc-400 uppercase tracking-widest text-xs font-bold">{t('home.stats.qcm')}</div>
             </motion.div>
           </div>
         </div>
@@ -170,11 +208,11 @@ export default function Home() {
           <div className="bg-white rounded-3xl md:rounded-[2.5rem] p-8 md:p-12 shadow-xl shadow-blue-900/5 border border-blue-100 flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex-1">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 text-blue-600 text-xs font-bold uppercase tracking-wider mb-4">
-                <Star className="w-4 h-4" /> Offre Spéciale
+                <Star className="w-4 h-4" /> {t('home.pricing.special')}
               </div>
-              <h2 className="text-3xl font-bold text-zinc-900 mb-4 tracking-tight">Accès Illimité à Vie</h2>
+              <h2 className="text-3xl font-bold text-zinc-900 mb-4 tracking-tight">{t('home.pricing.title')}</h2>
               <p className="text-zinc-600 leading-relaxed mb-6">
-                Profitez de l'intégralité des modules, des schémas pédagogiques et du support instructeur pour un tarif unique et définitif.
+                {t('home.pricing.desc')}
               </p>
               <div className="grid grid-cols-3 gap-4 border-t border-zinc-100 pt-6">
                 <div>
@@ -194,10 +232,10 @@ export default function Home() {
             <div className="flex flex-col items-center md:items-end gap-4">
               <div className="text-center md:text-right">
                 <div className="text-5xl font-black text-blue-600 mb-1">79€</div>
-                <div className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Paiement unique</div>
+                <div className="text-sm font-bold text-zinc-400 uppercase tracking-widest">{t('home.pricing.payment')}</div>
               </div>
               <Link to="/login" className="px-10 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-200 transition-all transform hover:scale-105">
-                S'inscrire maintenant
+                {t('home.pricing.signup')}
               </Link>
             </div>
           </div>
@@ -208,9 +246,9 @@ export default function Home() {
       <section className="py-24 bg-zinc-50 border-y border-zinc-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 mb-4 tracking-tight">Une formation adaptée à votre parcours</h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 mb-4 tracking-tight">{t('home.audience.title')}</h2>
             <p className="text-zinc-600 max-w-2xl mx-auto">
-              Que vous soyez en début de formation ou pilote expérimenté, nos modules répondent à vos besoins spécifiques.
+              {t('home.audience.desc')}
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -218,33 +256,27 @@ export default function Home() {
               <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <Plane className="w-7 h-7 text-blue-600" />
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-4">Envisageant une qualification IR</h3>
+              <h3 className="text-xl font-bold text-zinc-900 mb-4">{t('home.audience.1.title')}</h3>
               <p className="text-zinc-500 text-sm leading-relaxed">
-                Préparez le terrain avant même de monter dans l'avion. Familiarisez-vous avec les concepts 
-                fondamentaux, le circuit visuel et la philosophie du vol aux instruments pour aborder 
-                votre formation pratique avec une longueur d'avance.
+                {t('home.audience.1.desc')}
               </p>
             </div>
             <div className="bg-white p-8 rounded-3xl md:rounded-[2.5rem] border border-zinc-200 shadow-sm hover:shadow-xl transition-all group">
               <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <GraduationCap className="w-7 h-7 text-blue-600" />
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-4">En cours de formation pratique IR</h3>
+              <h3 className="text-xl font-bold text-zinc-900 mb-4">{t('home.audience.2.title')}</h3>
               <p className="text-zinc-500 text-sm leading-relaxed">
-                Complétez vos séances en vol par une base théorique solide et des procédures claires. 
-                Gagnez en sérénité et en efficacité lors de vos passages au simulateur ou en avion en maîtrisant 
-                parfaitement les trajectoires.
+                {t('home.audience.2.desc')}
               </p>
             </div>
             <div className="bg-white p-8 rounded-3xl md:rounded-[2.5rem] border border-zinc-200 shadow-sm hover:shadow-xl transition-all group">
               <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <Award className="w-7 h-7 text-emerald-600" />
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-4">Maintien de compétences & Sélections</h3>
+              <h3 className="text-xl font-bold text-zinc-900 mb-4">{t('home.audience.3.title')}</h3>
               <p className="text-zinc-500 text-sm leading-relaxed">
-                Pilotes déjà qualifiés : révisez vos classiques pour une prorogation ou préparez-vous 
-                aux exigences des sélections en compagnie aérienne. Maintenez un niveau d'excellence 
-                technique et opérationnel constant.
+                {t('home.audience.3.desc')}
               </p>
             </div>
           </div>
@@ -262,41 +294,41 @@ export default function Home() {
               viewport={{ once: true }}
             >
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs font-bold uppercase tracking-wider mb-6">
-                <Award className="w-4 h-4" /> Votre Instructeur
+                <Award className="w-4 h-4" /> {t('home.instructor.badge')}
               </div>
               <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-8 tracking-tight">
                 Jean-Claude CHENARD <span className="text-blue-500 italic">MCCI</span>
               </h2>
               <div className="space-y-6 text-zinc-400 text-lg leading-relaxed">
                 <p className="text-white font-medium">
-                  Instructeur sur simulateur de vol depuis 1985, expert en pédagogie aéronautique avec plus de 25 000 heures d'instruction.
+                  {t('home.instructor.desc1')}
                 </p>
                 <div className="space-y-4">
                   <ul className="grid grid-cols-1 gap-y-3 text-sm">
                     <li className="flex items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0" />
-                      <span>Formations IFR/IR de pilotes de ligne et de pilotes privés.</span>
+                      <span>{t('home.instructor.bullet1')}</span>
                     </li>
                     <li className="flex items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0" />
-                      <span>Formateur d’instructeurs IR (IRI).</span>
+                      <span>{t('home.instructor.bullet2')}</span>
                     </li>
                     <li className="flex items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0" />
-                      <span>Formations MCC (travail en équipage) MCCI.</span>
+                      <span>{t('home.instructor.bullet3')}</span>
                     </li>
                     <li className="flex items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0" />
-                      <span>Formateur d’instructeurs MCC (I-MCCI).</span>
+                      <span>{t('home.instructor.bullet4')}</span>
                     </li>
                   </ul>
                 </div>
 
                 <div className="pt-6 border-t border-zinc-800">
-                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 mb-4 font-bold">Parcours & Qualifications</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 mb-4 font-bold">{t('home.instructor.path')}</p>
                   <div className="grid grid-cols-1 gap-3 text-sm">
                     <div className="flex justify-between items-center py-2 border-b border-zinc-800/50">
-                      <span className="text-zinc-300">Armée de l’Air</span>
+                      <span className="text-zinc-300">{t('home.instructor.path1')}</span>
                       <span className="text-blue-400 font-mono">1985 — 1989</span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-zinc-800/50">
@@ -366,30 +398,47 @@ export default function Home() {
       <section id="modules" className="py-24 bg-zinc-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 mb-4">Programme de Formation</h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 mb-4">{t('home.modules.title')}</h2>
             <p className="text-zinc-600 max-w-2xl mx-auto">
-              Un parcours complet divisé en modules thématiques pour une progression logique et efficace.
+              {t('home.modules.desc')}
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {modules.length > 0 ? (
               modules.map((module, idx) => {
                 const Icon = getIconForModule(idx);
+                const moduleCourses = coursesByModule[module.id] || [];
                 return (
-                  <div key={module.id} className="bg-white p-6 rounded-2xl border border-zinc-200 hover:border-blue-500 transition-colors group">
+                  <div key={module.id} className="bg-white p-6 rounded-2xl border border-zinc-200 hover:border-blue-500 transition-colors group flex flex-col h-full">
                     <Icon className="w-10 h-10 text-zinc-400 group-hover:text-blue-600 mb-4 transition-colors" />
-                    <h4 className="font-bold text-zinc-900 mb-2">{module.title}</h4>
-                    <p className="text-sm text-zinc-500 line-clamp-3">{module.description}</p>
+                    <h4 className="font-bold text-zinc-900 mb-2">{language === 'en' && module.title_en ? module.title_en : module.title}</h4>
+                    <p className="text-sm text-zinc-500 mb-4 flex-grow">{language === 'en' && module.description_en ? module.description_en : module.description}</p>
+                    
+                    {moduleCourses.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-zinc-100">
+                        <h5 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-3">
+                          {language === 'en' ? 'Courses' : 'Cours'}
+                        </h5>
+                        <ul className="space-y-2">
+                          {moduleCourses.map((course, cIdx) => (
+                            <li key={course.id} className="text-sm text-zinc-600 flex items-start gap-2">
+                              <span className="text-blue-500 font-bold mt-0.5">{cIdx + 1}.</span>
+                              <span className="leading-tight">{language === 'en' && course.title_en ? course.title_en : course.title}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 );
               })
             ) : (
               [
-                { title: "Pilotage Sans Visibilité", icon: Plane, desc: "Assiette, inclinaison et circuit visuel." },
-                { title: "Moyens Radio", icon: Radio, desc: "VOR, ADF, ILS et GNSS." },
-                { title: "Attentes & Procédures", icon: Map, desc: "Entrées et maintien des hippodromes." },
-                { title: "Réglementation IFR", icon: FileText, desc: "Espaces aériens et minima météo." }
+                { title: language === 'en' ? "Instrument Flying" : "Pilotage Sans Visibilité", icon: Plane, desc: language === 'en' ? "Attitude, bank, and visual scan." : "Assiette, inclinaison et circuit visuel." },
+                { title: language === 'en' ? "Radio Navigation" : "Moyens Radio", icon: Radio, desc: language === 'en' ? "VOR, ADF, ILS, and GNSS." : "VOR, ADF, ILS et GNSS." },
+                { title: language === 'en' ? "Holds & Procedures" : "Attentes & Procédures", icon: Map, desc: language === 'en' ? "Entries and holding patterns." : "Entrées et maintien des hippodromes." },
+                { title: language === 'en' ? "IFR Regulations" : "Réglementation IFR", icon: FileText, desc: language === 'en' ? "Airspaces and weather minimums." : "Espaces aériens et minima météo." }
               ].map((module, idx) => (
                 <div key={idx} className="bg-white p-6 rounded-2xl border border-zinc-200 hover:border-blue-500 transition-colors group">
                   <module.icon className="w-10 h-10 text-zinc-400 group-hover:text-blue-600 mb-4 transition-colors" />
@@ -406,9 +455,9 @@ export default function Home() {
       <section className="py-24 bg-white overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 mb-4 tracking-tight">Témoignages de mes stagiaires</h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 mb-4 tracking-tight">{t('home.testimonials.title')}</h2>
             <p className="text-zinc-600 max-w-2xl mx-auto mb-12">
-              Découvrez les retours d'expérience de pilotes qui ont réussi leur formation et volent aujourd'hui en compagnie.
+              {t('home.testimonials.desc')}
             </p>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
@@ -440,7 +489,7 @@ export default function Home() {
                     ))}
                   </div>
                   <p className="text-zinc-600 italic text-sm mb-6 leading-relaxed">
-                    "{t.text}"
+                    "{language === 'en' && (t as any).text_en ? (t as any).text_en : t.text}"
                   </p>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
@@ -448,7 +497,7 @@ export default function Home() {
                     </div>
                     <div>
                       <div className="text-sm font-bold text-zinc-900">{t.author}</div>
-                      <div className="text-[10px] text-zinc-500 uppercase tracking-widest">{t.role}</div>
+                      <div className="text-[10px] text-zinc-500 uppercase tracking-widest">{language === 'en' && (t as any).role_en ? (t as any).role_en : t.role}</div>
                     </div>
                   </div>
                 </div>
@@ -459,6 +508,7 @@ export default function Home() {
               <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-3xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
               <Link 
                 to="/testimonials" 
+                onClick={() => window.scrollTo(0, 0)}
                 className="relative flex flex-col items-center gap-6 p-8 md:p-12 bg-zinc-50 rounded-3xl border border-zinc-100 hover:border-blue-500 transition-all text-center"
               >
                 <div className="flex -space-x-4">
@@ -477,12 +527,12 @@ export default function Home() {
                   </div>
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-zinc-900 mb-2">Consulter tous les avis</h3>
+                  <h3 className="text-2xl font-bold text-zinc-900 mb-2">{t('home.testimonials.all.title')}</h3>
                   <p className="text-zinc-600 leading-relaxed mb-6">
-                    Retrouvez l'intégralité des témoignages de mes élèves pilotes sur notre page dédiée.
+                    {t('home.testimonials.all.desc')}
                   </p>
                   <div className="inline-flex items-center gap-2 text-blue-600 font-bold group-hover:translate-x-2 transition-transform">
-                    Voir les témoignages <ChevronRight className="w-6 h-6" />
+                    {t('home.testimonials.all.btn')} <ChevronRight className="w-6 h-6" />
                   </div>
                 </div>
               </Link>
@@ -494,19 +544,19 @@ export default function Home() {
       {/* CTA Section */}
       <section className="py-24 bg-blue-600">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-8">Prêt à franchir le pas vers l'IFR ?</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-8">{t('home.cta.title')}</h2>
           <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 md:p-12 max-w-3xl mx-auto border border-white/20">
             <div className="flex flex-col md:flex-row items-center justify-between gap-8">
               <div className="text-center md:text-left">
-                <div className="text-white text-4xl font-bold mb-2">79€ <span className="text-lg font-normal opacity-80">/ accès à vie</span></div>
+                <div className="text-white text-4xl font-bold mb-2">{t('home.cta.price')} <span className="text-lg font-normal opacity-80">{t('home.cta.price_desc')}</span></div>
                 <ul className="space-y-2 text-white/90 text-sm flex flex-col items-center md:items-start">
-                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> Tous les modules théoriques</li>
-                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> Mises à jour gratuites</li>
-                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> Support instructeur</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> {t('home.cta.bullet1')}</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> {t('home.cta.bullet2')}</li>
+                  <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> {t('home.cta.bullet3')}</li>
                 </ul>
               </div>
               <Link to="/login" className="w-full md:w-auto px-8 py-4 bg-white text-blue-600 font-bold rounded-xl hover:bg-zinc-100 transition-colors">
-                S'inscrire maintenant
+                {t('home.cta.btn')}
               </Link>
             </div>
           </div>

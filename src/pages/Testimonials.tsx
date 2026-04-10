@@ -5,20 +5,25 @@ import { Link } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, onSnapshot } from 'firebase/firestore';
 import { defaultTestimonials } from '../data/testimonials';
+import { useLanguage } from '../LanguageContext';
 
 interface Testimonial {
   id: string;
   text: string;
+  text_en?: string;
   author: string;
   role: string;
+  role_en?: string;
   rating: number;
   order: number;
 }
 
 export default function Testimonials() {
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const { t, language } = useLanguage();
 
   useEffect(() => {
+    window.scrollTo(0, 0);
     const q = query(collection(db, 'testimonials'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const tests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Testimonial));
@@ -36,7 +41,7 @@ export default function Testimonials() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <Link to="/" className="inline-flex items-center gap-2 text-zinc-500 hover:text-blue-600 transition-colors mb-12 group">
           <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-          Retour à l'accueil
+          {t('testimonials.back')}
         </Link>
 
         <header className="mb-20 text-center">
@@ -46,10 +51,10 @@ export default function Testimonials() {
             transition={{ duration: 0.6 }}
           >
             <h1 className="text-4xl md:text-6xl font-bold text-zinc-900 mb-6 tracking-tight">
-              Témoignages <span className="text-blue-600 italic">Formation Pilotes</span>
+              {t('testimonials.title')} <span className="text-blue-600 italic">{t('testimonials.subtitle')}</span>
             </h1>
             <p className="text-xl text-zinc-600 max-w-3xl mx-auto leading-relaxed">
-              Découvrez les retours d'expérience de mes stagiaires. Des centaines de pilotes ont déjà fait confiance à Aviation Online pour leur formation IFR et leur préparation aux sélections.
+              {t('testimonials.desc')}
             </p>
           </motion.div>
         </header>
@@ -73,7 +78,7 @@ export default function Testimonials() {
               </div>
 
               <p className="text-zinc-700 italic mb-8 relative z-10 leading-relaxed text-lg">
-                "{testimonial.text}"
+                "{language === 'en' && testimonial.text_en ? testimonial.text_en : testimonial.text}"
               </p>
 
               <div className="flex items-center gap-4 mt-auto">
@@ -82,7 +87,7 @@ export default function Testimonials() {
                 </div>
                 <div>
                   <div className="font-bold text-zinc-900">{testimonial.author}</div>
-                  <div className="text-xs text-zinc-500 uppercase tracking-widest font-semibold">{testimonial.role}</div>
+                  <div className="text-xs text-zinc-500 uppercase tracking-widest font-semibold">{language === 'en' && testimonial.role_en ? testimonial.role_en : testimonial.role}</div>
                 </div>
               </div>
             </motion.div>
@@ -94,17 +99,17 @@ export default function Testimonials() {
           <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
             <div>
               <h2 className="text-3xl md:text-5xl font-bold mb-8 tracking-tight">
-                Rejoignez la communauté des <span className="text-blue-500">pilotes d'élite</span>
+                {t('testimonials.cta.title')} <span className="text-blue-500">{t('testimonials.cta.title_highlight')}</span>
               </h2>
               <p className="text-zinc-400 text-lg mb-10 leading-relaxed">
-                Notre formation est conçue pour vous amener au niveau d'exigence des plus grandes compagnies aériennes. Ne laissez rien au hasard pour votre carrière.
+                {t('testimonials.cta.desc')}
               </p>
               <div className="space-y-4">
                 {[
-                  "Accès immédiat à tous les modules",
-                  "Support instructeur personnalisé",
-                  "Mises à jour régulières EASA",
-                  "Assistant IA spécialisé"
+                  t('testimonials.cta.bullet1'),
+                  t('testimonials.cta.bullet2'),
+                  t('testimonials.cta.bullet3'),
+                  t('testimonials.cta.bullet4')
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <CheckCircle2 className="w-5 h-5 text-blue-500" />
@@ -117,17 +122,17 @@ export default function Testimonials() {
               <div className="grid grid-cols-2 gap-6">
                 <div className="bg-white/5 backdrop-blur-sm p-8 rounded-3xl border border-white/10">
                   <Users className="w-10 h-10 text-blue-500 mb-4" />
-                  <div className="text-3xl font-bold mb-1">500+</div>
-                  <div className="text-zinc-500 text-sm uppercase tracking-wider">Pilotes formés</div>
+                  <div className="text-3xl font-bold mb-1">{t('testimonials.cta.stat1.value')}</div>
+                  <div className="text-zinc-500 text-sm uppercase tracking-wider">{t('testimonials.cta.stat1.label')}</div>
                 </div>
                 <div className="bg-white/5 backdrop-blur-sm p-8 rounded-3xl border border-white/10">
                   <Award className="w-10 h-10 text-emerald-500 mb-4" />
-                  <div className="text-3xl font-bold mb-1">98%</div>
-                  <div className="text-zinc-500 text-sm uppercase tracking-wider">Taux de réussite</div>
+                  <div className="text-3xl font-bold mb-1">{t('testimonials.cta.stat2.value')}</div>
+                  <div className="text-zinc-500 text-sm uppercase tracking-wider">{t('testimonials.cta.stat2.label')}</div>
                 </div>
               </div>
               <Link to="/login" className="w-full py-6 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-center transition-all transform hover:scale-[1.02] shadow-xl shadow-blue-600/20">
-                Commencer ma formation aujourd'hui
+                {t('testimonials.cta.btn')}
               </Link>
             </div>
           </div>

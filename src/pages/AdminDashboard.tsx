@@ -3,17 +3,20 @@ import { Link } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType, auth, testConnection } from '../firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, query, orderBy, onSnapshot, Timestamp, writeBatch, getDocs, limit, where, getDocFromServer, setDoc } from 'firebase/firestore';
 import { defaultTestimonials } from '../data/testimonials';
-import { Plus, Trash2, Edit2, BookOpen, ChevronDown, ChevronUp, Database, FileText, X, AlertCircle, CheckCircle2, Upload, History, Mail, UserPlus, Award, Users, Search, Star, Shield, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Trash2, Edit2, BookOpen, ChevronDown, ChevronUp, Database, FileText, X, AlertCircle, CheckCircle2, Upload, History, Mail, UserPlus, Award, Users, Search, Star, Shield, ArrowUp, ArrowDown, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../App';
 import Papa from 'papaparse';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { GoogleGenAI } from "@google/genai";
+import ReactMarkdown from 'react-markdown';
 
 interface Module {
   id: string;
   title: string;
+  title_en?: string;
   description: string;
+  description_en?: string;
   pdfUrl?: string;
   order: number;
 }
@@ -22,7 +25,9 @@ interface Course {
   id: string;
   moduleId: string;
   title: string;
+  title_en?: string;
   content: string;
+  content_en?: string;
   pdfUrl?: string;
   order: number;
 }
@@ -45,7 +50,11 @@ interface Student {
 interface Quiz {
   id: string;
   title: string;
+  title_en?: string;
   description: string;
+  description_en?: string;
+  category?: string;
+  category_en?: string;
   order: number;
 }
 
@@ -53,9 +62,12 @@ interface Question {
   id: string;
   quizId: string;
   text: string;
+  text_en?: string;
   options: string[];
+  options_en?: string[];
   correctAnswer: number;
   explanation?: string;
+  explanation_en?: string;
   attachmentUrl?: string;
   attachmentType?: 'image' | 'pdf';
   order: number;
@@ -86,8 +98,10 @@ interface QuizAttempt {
 interface Testimonial {
   id: string;
   text: string;
+  text_en?: string;
   author: string;
   role: string;
+  role_en?: string;
   rating: number;
   order: number;
   createdAt?: Timestamp;
@@ -108,10 +122,32 @@ export default function AdminDashboard() {
   const [editingQuiz, setEditingQuiz] = useState<Partial<Quiz> | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<Partial<Question> | null>(null);
   const [editingTestimonial, setEditingTestimonial] = useState<Partial<Testimonial> | null>(null);
+  const [showCoursePreview, setShowCoursePreview] = useState(false);
+  const [showCoursePreviewEn, setShowCoursePreviewEn] = useState(false);
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
+
+  const getDirectImageUrl = (url: string) => {
+    if (!url) return '';
+    const cleanUrl = url.trim();
+    // Google Drive
+    if (cleanUrl.includes('drive.google.com') || cleanUrl.includes('docs.google.com')) {
+      const fileId = cleanUrl.match(/\/d\/([^/]+)/)?.[1] || cleanUrl.match(/id=([^&]+)/)?.[1];
+      if (fileId) {
+        // Method 1: User Content (most common for direct)
+        return `https://drive.google.com/uc?export=view&id=${fileId}`;
+      }
+    }
+    // Dropbox
+    if (cleanUrl.includes('dropbox.com')) {
+      return cleanUrl.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '').replace('?dl=1', '');
+    }
+    return cleanUrl;
+  };
+
   const [expandedQuiz, setExpandedQuiz] = useState<string | null>(null);
   const [coursesByModule, setCoursesByModule] = useState<Record<string, Course[]>>({});
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
   const [isImportingPdf, setIsImportingPdf] = useState(false);
   const [diagnosticResult, setDiagnosticResult] = useState<string | null>(null);
 
@@ -156,7 +192,7 @@ export default function AdminDashboard() {
   const [userSearch, setUserSearch] = useState('');
   const [resultSearch, setResultSearch] = useState('');
   const [logSearch, setLogSearch] = useState('');
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
   const [dbTestStatus, setDbTestStatus] = useState<{ type: 'success' | 'error' | 'loading', text: string } | null>(null);
   const [serverDebugResult, setServerDebugResult] = useState<any>(null);
   const [showConfirmDelete, setShowConfirmDelete] = useState<{ type: 'module' | 'course' | 'clear' | 'user' | 'seedTestimonials' | 'quiz', id?: string, moduleId?: string } | null>(null);
@@ -208,8 +244,8 @@ export default function AdminDashboard() {
         await deleteDoc(doc(db, 'modules', mod.id));
       }
       showStatus('success', 'Base de données nettoyée.');
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      console.error(error instanceof Error ? error.message : String(error));
       showStatus('error', 'Erreur lors du nettoyage.');
     } finally {
       setIsSeeding(false);
@@ -465,7 +501,7 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
         showStatus('success', `${results.data.length} utilisateurs chargés.`);
       },
       error: (err) => {
-        console.error(err);
+        console.error(err instanceof Error ? err.message : String(err));
         showStatus('error', "Erreur lors de la lecture du fichier.");
       }
     });
@@ -490,7 +526,7 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
       setMigrationResults(data.results);
       showStatus('success', "Migration terminée.");
     } catch (error: any) {
-      console.error(error);
+      console.error(error instanceof Error ? error.message : String(error));
       showStatus('error', error.message);
     } finally {
       setIsMigrating(false);
@@ -499,9 +535,152 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
 
   const [isDeleting, setIsDeleting] = useState(false);
   
-  const showStatus = (type: 'success' | 'error', text: string) => {
+  const showStatus = (type: 'success' | 'error' | 'info', text: string) => {
     setStatusMessage({ type, text });
     setTimeout(() => setStatusMessage(null), 3000);
+  };
+
+  const translateMissingContent = async () => {
+    setIsTranslating(true);
+    showStatus('info', 'Traduction en cours... Cela peut prendre quelques minutes.');
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      let updatesCount = 0;
+
+      const cleanJson = (str: string) => str.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
+
+      const generateContentWithRetry = async (contents: string, retries = 8, delayMs = 6000): Promise<any> => {
+        for (let i = 0; i < retries; i++) {
+          try {
+            const response = await ai.models.generateContent({
+              model: "gemini-3-flash-preview",
+              contents,
+              config: {
+                responseMimeType: "application/json",
+              }
+            });
+            return response;
+          } catch (error: any) {
+            const errStr = error?.message || String(error);
+            const isRateLimit = error?.status === 429 || error?.status === 'RESOURCE_EXHAUSTED' || errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED');
+            if (isRateLimit && i < retries - 1) {
+              console.warn(`Rate limit hit, retrying in ${delayMs}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+              delayMs *= 1.5; // Exponential backoff
+            } else {
+              throw new Error(errStr);
+            }
+          }
+        }
+      };
+
+      // 1. Testimonials
+      const testimonialsSnap = await getDocs(collection(db, 'testimonials'));
+      for (const docSnap of testimonialsSnap.docs) {
+        const data = docSnap.data();
+        if (!data.text_en && data.text) {
+          try {
+            const response = await generateContentWithRetry(`Translate the following testimonial from French to English. Return a JSON object with "text_en" and "role_en".\n\nText: ${data.text}\nRole: ${data.role || ''}`);
+            const result = JSON.parse(cleanJson(response.text || "{}"));
+            await updateDoc(docSnap.ref, {
+              text_en: result.text_en || '',
+              role_en: result.role_en || ''
+            });
+            updatesCount++;
+            await new Promise(resolve => setTimeout(resolve, 4000)); // 4s delay to respect 15 RPM limit
+          } catch (e: any) {
+            const errStr = e?.message || String(e);
+            const isRateLimit = errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED');
+            if (isRateLimit) throw e;
+            console.error("Failed to translate testimonial", docSnap.id, errStr);
+          }
+        }
+      }
+
+      // 2. Quizzes
+      const quizzesSnap = await getDocs(collection(db, 'quizzes'));
+      for (const docSnap of quizzesSnap.docs) {
+        const data = docSnap.data();
+        if (!data.title_en && data.title) {
+          try {
+            const response = await generateContentWithRetry(`Translate the following quiz title and description from French to English. Return a JSON object with "title_en" and "description_en".\n\nTitle: ${data.title}\nDescription: ${data.description || ''}`);
+            const result = JSON.parse(cleanJson(response.text || "{}"));
+            await updateDoc(docSnap.ref, {
+              title_en: result.title_en || '',
+              description_en: result.description_en || ''
+            });
+            updatesCount++;
+            await new Promise(resolve => setTimeout(resolve, 4000)); // 4s delay to respect 15 RPM limit
+          } catch (e: any) {
+            const errStr = e?.message || String(e);
+            const isRateLimit = errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED');
+            if (isRateLimit) throw e;
+            console.error("Failed to translate quiz", docSnap.id, errStr);
+          }
+        }
+
+        // 3. Questions for this quiz
+        const questionsSnap = await getDocs(collection(db, `quizzes/${docSnap.id}/questions`));
+        for (const qSnap of questionsSnap.docs) {
+          const qData = qSnap.data();
+          
+          const isTextMissing = !qData.text_en || qData.text_en.trim() === '';
+
+          const isOptionsMissingOrUntranslated = !qData.options_en || 
+                                                 !Array.isArray(qData.options_en) || 
+                                                 qData.options_en.length === 0 || 
+                                                 qData.options_en.length !== (qData.options?.length || 0) ||
+                                                 qData.options_en.some((opt: string) => !opt || opt.trim() === '');
+          
+          if (qData.text && (isTextMissing || isOptionsMissingOrUntranslated)) {
+            try {
+              let optionsStr = "";
+              try { optionsStr = JSON.stringify(qData.options); } catch (err) { optionsStr = String(qData.options); }
+              
+              const response = await generateContentWithRetry(`Translate the following quiz question, its options, and explanation from French to English. You MUST translate the options array. Return a JSON object with "text_en" (string), "options_en" (array of translated strings), and "explanation_en" (string).\n\nQuestion: ${qData.text}\nOptions: ${optionsStr}\nExplanation: ${qData.explanation || ''}`);
+              const result = JSON.parse(cleanJson(response.text || "{}"));
+              
+              // Fallback to result.options if the AI used the wrong key
+              let translatedOptions = result.options_en || result.options || qData.options;
+              if (!Array.isArray(translatedOptions)) {
+                translatedOptions = qData.options;
+              }
+              
+              await updateDoc(qSnap.ref, {
+                text_en: result.text_en || qData.text_en || '',
+                options_en: translatedOptions,
+                explanation_en: result.explanation_en || qData.explanation_en || ''
+              });
+              updatesCount++;
+              await new Promise(resolve => setTimeout(resolve, 4000)); // 4s delay to respect 15 RPM limit
+            } catch (e: any) {
+              const errStr = e?.message || String(e);
+              const isRateLimit = errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED');
+              if (isRateLimit) throw e;
+              console.error("Failed to translate question", qSnap.id, errStr);
+            }
+          }
+        }
+      }
+
+      if (updatesCount > 0) {
+        showStatus('success', `${updatesCount} éléments traduits avec succès !`);
+      } else {
+        showStatus('info', 'Tout est déjà traduit.');
+      }
+    } catch (error: any) {
+      const errStr = error?.message || String(error);
+      const isRateLimit = errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED');
+      if (isRateLimit) {
+        console.warn("Translation stopped due to rate limit/quota.");
+        showStatus('error', 'Quota de traduction dépassé. Veuillez réessayer plus tard.');
+      } else {
+        console.error("Translation error:", errStr);
+        showStatus('error', 'Erreur lors de la traduction.');
+      }
+    } finally {
+      setIsTranslating(false);
+    }
   };
 
   const seedInitialData = async () => {
@@ -531,6 +710,12 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
           title: 'L\'horizon artificiel (ADI)',
           content: `# L'horizon artificiel ou ADI\n\nL'ADI (Attitude Director Indicator) est l'instrument principal. Il remplace l'horizon naturel.\n\n## Repères d'assiette\n- **Partie bleue** : Ciel (assiette positive).\n- **Partie marron** : Terre (assiette négative).\n- **Maquette** : Représente l'avion (point central ou triangle).\n\n## Repères d'inclinaison\nSitués en haut de l'instrument. Des graduations indiquent l'angle tous les 10°, avec des repères marqués à 45° et 60°.`,
           order: 2
+        },
+        {
+          id: 'course_psv_instruments',
+          title: 'Les instruments gyroscopiques',
+          content: `# Les instruments gyroscopiques\n\n## Le Conservateur de Cap (Directional Gyro)\nIndique le cap magnétique de l'avion. Doit être recalé régulièrement avec le compas magnétique.\n\n## L'Indicateur de Virage (Turn Coordinator)\nIndique le taux de virage (ex: taux standard de 3°/sec) et la symétrie du vol (bille).`,
+          order: 3
         }
       ];
 
@@ -561,6 +746,12 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
           title: 'Trim et Puissance',
           content: `# Utilisation du Trim et de la Puissance\n\n- **Le trim "pilote" la vitesse** : On compense l'effort pour maintenir une vitesse donnée.\n- **La puissance "pilote" le plan** : On ajuste les gaz pour tenir le palier, la montée ou la descente.\n\n*Réfléchir avant d'agir est la meilleure technique !*`,
           order: 2
+        },
+        {
+          id: 'course_cv_erreurs',
+          title: 'Erreurs courantes',
+          content: `# Erreurs courantes du circuit visuel\n\n## La fixation\nRester bloqué sur un seul instrument (ex: l'altimètre pendant une mise en palier).\n\n## L'omission\nOublier d'intégrer un instrument dans le circuit (ex: oublier de vérifier la bille ou le conservateur de cap).`,
+          order: 3
         }
       ];
 
@@ -586,6 +777,18 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
           title: 'Préparation de l\'approche',
           content: `# Préparation de l'approche\n\nUne approche se prépare bien avant d'arriver sur le point initial.\n\n## 1. Briefing\n- Trajectoire\n- Altitudes de sécurité\n- Fréquences\n- Procédure d'interruption`,
           order: 1
+        },
+        {
+          id: 'course_approche_2',
+          title: 'Interception de l\'axe',
+          content: `# Interception de l'axe\n\nL'interception de l'axe d'approche finale (Localizer ou axe VOR/NDB) requiert une anticipation de la mise en virage.\n\n## Technique\n- Anticiper selon la vitesse et l'angle d'interception.\n- Ne pas "chasser" l'aiguille.`,
+          order: 2
+        },
+        {
+          id: 'course_approche_3',
+          title: 'Suivi du plan de descente',
+          content: `# Suivi du plan de descente\n\nLe plan de descente (Glide Path) s'intercepte généralement par en dessous.\n\n## Gestion de la vitesse\n- Sortir la configuration atterrissage avant la descente.\n- Ajuster la puissance pour maintenir la vitesse d'approche.`,
+          order: 3
         }
       ];
 
@@ -611,6 +814,18 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
           title: 'Suivi de trajectoire',
           content: `# Suivi de trajectoire\n\nUtilisation du VOR et de l'ADF pour maintenir une route précise.`,
           order: 1
+        },
+        {
+          id: 'course_nav_2',
+          title: 'Les attentes (Holdings)',
+          content: `# Les attentes (Holdings)\n\nL'attente permet de patienter en vol au-dessus d'un repère.\n\n## Les 3 types d'entrées\n- **Directe (Secteur 3)** : Arrivée dans le secteur de 180°.\n- **Décalée (Secteur 2)** : Arrivée dans le secteur de 70° (Teardrop).\n- **Parallèle (Secteur 1)** : Arrivée dans le secteur de 110°.\n\n## Corrections de dérive\nAppliquer 3 fois la dérive dans la branche d'éloignement.`,
+          order: 2
+        },
+        {
+          id: 'course_nav_3',
+          title: 'Procédures SID et STAR',
+          content: `# Procédures de départ et d'arrivée\n\n## SID (Standard Instrument Departure)\nPermet de rejoindre la route en route depuis l'aérodrome.\n\n## STAR (Standard Terminal Arrival Route)\nPermet de rejoindre l'approche depuis la route en route.`,
+          order: 3
         }
       ];
 
@@ -618,6 +833,78 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
         const { id, ...data } = c;
         const cRef = doc(db, `modules/${mod4Id}/courses`, id);
         batch.set(cRef, { ...data, moduleId: mod4Id, createdAt: Timestamp.now() });
+      });
+
+      // Module 5: Moyens Radionavigation
+      const mod5Id = 'mod_radionav';
+      const mod5Ref = doc(db, 'modules', mod5Id);
+      batch.set(mod5Ref, {
+        title: "Moyens Radionavigation",
+        description: "Comprendre et utiliser les instruments de radionavigation (VOR, NDB, ILS, GPS).",
+        order: 5
+      });
+
+      const courses5 = [
+        {
+          id: 'course_radionav_vor',
+          title: 'Le VOR (VHF Omnidirectional Range)',
+          content: `# Le VOR\n\nLe VOR fournit une information d'azimut magnétique par rapport à la balise.\n\n## Utilisation\n- Sélectionner la fréquence.\n- Identifier la balise (Morse).\n- Afficher la radiale désirée (OBS).\n- Lire l'indication TO/FROM et la déviation (CDI).`,
+          order: 1
+        },
+        {
+          id: 'course_radionav_adf',
+          title: 'Le NDB et l\'ADF',
+          content: `# Le NDB et l'ADF\n\nLe NDB (Non-Directional Beacon) émet un signal reçu par l'ADF (Automatic Direction Finder).\n\n## Formule de base\n**Gisement + Cap = Relèvement Vrai (QTE) ou Magnétique (QDR)**\n\nL'aiguille pointe toujours vers la station.`,
+          order: 2
+        },
+        {
+          id: 'course_radionav_ils',
+          title: 'L\'ILS (Instrument Landing System)',
+          content: `# L'ILS\n\nSystème d'atterrissage aux instruments de précision.\n\n## Composants\n- **Localizer (LOC)** : Guidage horizontal (Axe de piste).\n- **Glide Path (GP)** : Guidage vertical (Plan de descente, généralement 3°).\n- **Marker Beacons** : Repères de distance (Outer, Middle, Inner).`,
+          order: 3
+        }
+      ];
+
+      courses5.forEach((c) => {
+        const { id, ...data } = c;
+        const cRef = doc(db, `modules/${mod5Id}/courses`, id);
+        batch.set(cRef, { ...data, moduleId: mod5Id, createdAt: Timestamp.now() });
+      });
+
+      // Module 6: Calcul Mental
+      const mod6Id = 'mod_calcul_mental';
+      const mod6Ref = doc(db, 'modules', mod6Id);
+      batch.set(mod6Ref, {
+        title: "Calcul Mental du Pilote",
+        description: "Astuces et formules de calcul mental indispensables en vol IFR.",
+        order: 6
+      });
+
+      const courses6 = [
+        {
+          id: 'course_calcul_descente',
+          title: 'Calcul du plan de descente',
+          content: `# Calcul du plan de descente\n\n## Taux de descente (Varimètre)\nPour un plan standard à 3° (ou 5%) :\n**Taux de descente (ft/min) = Vitesse Sol (kt) × 5**\n*Exemple : à 120 kt, le taux est de 120 × 5 = 600 ft/min.*\n\n## Début de descente (Top of Descent)\nPour un plan à 3° :\n**Distance (NM) = Altitude à perdre (ft) / 300**\n*Exemple : Pour perdre 6000 ft, il faut commencer à descendre à 6000 / 300 = 20 NM.*`,
+          order: 1
+        },
+        {
+          id: 'course_calcul_vent',
+          title: 'Calcul du vent traversier',
+          content: `# Calcul du vent traversier (Crosswind)\n\nUtilisation de la méthode de l'horloge en fonction de l'angle entre le vent et la route :\n\n- **15°** : 1/4 du vent (25%)\n- **30°** : 1/2 du vent (50%)\n- **45°** : 3/4 du vent (75%)\n- **60° ou plus** : Tout le vent (100%)\n\n*Exemple : Vent de 20 kt avec un angle de 30° -> Vent traversier = 10 kt.*`,
+          order: 2
+        },
+        {
+          id: 'course_calcul_derive',
+          title: 'Calcul de la dérive',
+          content: `# Calcul de la dérive maximale (X)\n\n**X = Facteur de base (Fb) × Vent traversier**\n\n## Facteur de base (Fb)\n**Fb = 60 / Vitesse Propre (TAS)**\n*Exemple : à 120 kt, Fb = 60 / 120 = 0.5.*\n\nSi le vent traversier est de 20 kt, la dérive maximale est de 0.5 × 20 = 10°.`,
+          order: 3
+        }
+      ];
+
+      courses6.forEach((c) => {
+        const { id, ...data } = c;
+        const cRef = doc(db, `modules/${mod6Id}/courses`, id);
+        batch.set(cRef, { ...data, moduleId: mod6Id, createdAt: Timestamp.now() });
       });
 
       await batch.commit();
@@ -628,7 +915,9 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
       const q1Ref = doc(db, 'quizzes', q1Id);
       quizBatch.set(q1Ref, {
         title: 'Bases du PSV',
+        title_en: 'PSV Basics',
         description: 'Testez vos connaissances sur les principes fondamentaux du vol aux instruments.',
+        description_en: 'Test your knowledge on the fundamental principles of instrument flying.',
         order: 1
       });
 
@@ -636,33 +925,45 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
         {
           id: 'q1_1',
           text: 'Quel est le seuil de détection du mouvement par le système vestibulaire ?',
+          text_en: 'What is the motion detection threshold of the vestibular system?',
           options: ['0,01 kt/s²', '0,1 kt/s²', '1,0 kt/s²', '10 kt/s²'],
+          options_en: ['0.01 kt/s²', '0.1 kt/s²', '1.0 kt/s²', '10 kt/s²'],
           correctAnswer: 1,
           explanation: 'En-deçà de 0,1 kt/s², le mouvement n\'est pas détecté par l\'oreille interne.',
+          explanation_en: 'Below 0.1 kt/s², motion is not detected by the inner ear.',
           order: 1
         },
         {
           id: 'q1_2',
           text: 'Quel instrument est considéré comme le centre du circuit visuel ?',
+          text_en: 'Which instrument is considered the center of the visual scan?',
           options: ['L\'altimètre', 'Le conservateur de cap', 'L\'horizon artificiel (ADI)', 'Le variomètre'],
+          options_en: ['Altimeter', 'Heading Indicator', 'Attitude Indicator (ADI)', 'Vertical Speed Indicator'],
           correctAnswer: 2,
           explanation: 'L\'ADI est l\'instrument principal et le centre de la méthode en étoile.',
+          explanation_en: 'The ADI is the primary instrument and the center of the star-pattern scan.',
           order: 2
         },
         {
           id: 'q1_3',
           text: 'En vol IFR, si vos sensations contredisent vos instruments, que devez-vous faire ?',
+          text_en: 'In IFR flight, if your sensations contradict your instruments, what should you do?',
           options: ['Suivre vos sensations', 'Faire une moyenne des deux', 'Croire vos instruments', 'Demander confirmation au contrôle'],
+          options_en: ['Follow your sensations', 'Average the two', 'Trust your instruments', 'Ask ATC for confirmation'],
           correctAnswer: 2,
           explanation: 'Les instruments ont toujours raison. Les illusions sensorielles sont fréquentes en IFR.',
+          explanation_en: 'Instruments are always right. Sensory illusions are common in IFR.',
           order: 3
         },
         {
           id: 'q1_4',
           text: 'Quelle est la largeur du champ visuel permettant la lecture précise ?',
+          text_en: 'What is the width of the visual field that allows for precise reading?',
           options: ['3°', '10°', '30°', '150°'],
+          options_en: ['3°', '10°', '30°', '150°'],
           correctAnswer: 0,
           explanation: 'La vision fovéale (lecture précise) ne couvre qu\'un cône de 3°.',
+          explanation_en: 'Foveal vision (precise reading) only covers a 3° cone.',
           order: 4
         }
       ];
@@ -678,7 +979,9 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
       const q2Ref = doc(db, 'quizzes', q2Id);
       quizBatch.set(q2Ref, {
         title: 'Moyens Radio-Navigation',
+        title_en: 'Radio-Navigation Aids',
         description: 'Vérifiez vos connaissances sur le VOR, l\'ADF et l\'ILS.',
+        description_en: 'Check your knowledge on VOR, ADF and ILS.',
         order: 2
       });
 
@@ -686,17 +989,23 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
         {
           id: 'q2_1',
           text: 'Quelle est la plage de fréquences des balises VOR ?',
+          text_en: 'What is the frequency range of VOR beacons?',
           options: ['108.00 - 117.95 MHz', '118.00 - 136.97 MHz', '190 - 1750 kHz', '329.15 - 335.00 MHz'],
+          options_en: ['108.00 - 117.95 MHz', '118.00 - 136.97 MHz', '190 - 1750 kHz', '329.15 - 335.00 MHz'],
           correctAnswer: 0,
           explanation: 'Les VOR utilisent la bande VHF entre 108.00 et 117.95 MHz.',
+          explanation_en: 'VORs use the VHF band between 108.00 and 117.95 MHz.',
           order: 1
         },
         {
           id: 'q2_2',
           text: 'Que signifie l\'acronyme ILS ?',
+          text_en: 'What does the acronym ILS stand for?',
           options: ['Instrument Landing System', 'Internal Leveling System', 'Integrated Light System', 'International Landing Standard'],
+          options_en: ['Instrument Landing System', 'Internal Leveling System', 'Integrated Light System', 'International Landing Standard'],
           correctAnswer: 0,
           explanation: 'ILS signifie Instrument Landing System (Système d\'Atterrissage aux Instruments).',
+          explanation_en: 'ILS stands for Instrument Landing System.',
           order: 2
         }
       ];
@@ -710,8 +1019,8 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
       await quizBatch.commit();
 
       showStatus('success', 'Données initiales réinitialisées avec succès !');
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      console.error(error instanceof Error ? error.message : String(error));
       showStatus('error', 'Erreur lors du seeding des données.');
     } finally {
       setIsSeeding(false);
@@ -846,8 +1155,8 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
 
       await batch.commit();
       showStatus('success', 'Témoignages importés avec succès');
-    } catch (error) {
-      console.error('Error seeding testimonials:', error);
+    } catch (error: any) {
+      console.error('Error seeding testimonials:', error instanceof Error ? error.message : String(error));
       showStatus('error', 'Erreur lors de l\'importation');
     } finally {
       setIsSeeding(false);
@@ -890,6 +1199,60 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
       showStatus('success', 'Cours supprimé.');
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `modules/${moduleId}/courses/${courseId}`);
+    }
+  };
+
+  const handleMoveCourse = async (moduleId: string, courseIndex: number, direction: 'up' | 'down') => {
+    const courses = [...(coursesByModule[moduleId] || [])];
+    if (!courses.length) return;
+
+    const newIndex = direction === 'up' ? courseIndex - 1 : courseIndex + 1;
+    if (newIndex < 0 || newIndex >= courses.length) return;
+
+    // Swap in array
+    const temp = courses[courseIndex];
+    courses[courseIndex] = courses[newIndex];
+    courses[newIndex] = temp;
+
+    try {
+      const batch = writeBatch(db);
+      
+      // Re-assign order based on new array index
+      courses.forEach((course, index) => {
+        const ref = doc(db, `modules/${moduleId}/courses`, course.id);
+        batch.update(ref, { order: index + 1 });
+      });
+
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `modules/${moduleId}/courses`);
+    }
+  };
+
+  const handleMoveModule = async (moduleIndex: number, direction: 'up' | 'down') => {
+    const mods = [...modules];
+    if (!mods.length) return;
+
+    const newIndex = direction === 'up' ? moduleIndex - 1 : moduleIndex + 1;
+    if (newIndex < 0 || newIndex >= mods.length) return;
+
+    // Swap in array
+    const temp = mods[moduleIndex];
+    mods[moduleIndex] = mods[newIndex];
+    mods[newIndex] = temp;
+
+    try {
+      const batch = writeBatch(db);
+      
+      // Re-assign order based on new array index
+      mods.forEach((mod, index) => {
+        const ref = doc(db, 'modules', mod.id);
+        batch.update(ref, { order: index + 1 });
+      });
+
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'modules');
     }
   };
 
@@ -1036,7 +1399,7 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
       }
       setShowConfirmDelete(null);
     } catch (error: any) {
-      console.error("Delete user error details:", error);
+      console.error("Delete user error details:", error instanceof Error ? error.message : String(error));
       let msg = error.message || "Une erreur inconnue est survenue";
       try {
         const parsed = JSON.parse(msg);
@@ -1091,7 +1454,7 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                   await testConnection();
                   setDbTestStatus({ type: 'success', text: '✅ Connexion réussie !' });
                 } catch (e: any) {
-                  console.error("Debug Test DB Error:", e);
+                  console.error("Debug Test DB Error:", e instanceof Error ? e.message : String(e));
                   setDbTestStatus({ type: 'error', text: '❌ Erreur : ' + (e.message || 'Inconnue') });
                 }
               }}
@@ -1111,7 +1474,7 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                   setServerDebugResult(data);
                   setDbTestStatus({ type: 'success', text: '✅ Réponse serveur reçue' });
                 } catch (e: any) {
-                  console.error("Erreur Serveur DB:", e);
+                  console.error("Erreur Serveur DB:", e instanceof Error ? e.message : String(e));
                   setDbTestStatus({ type: 'error', text: '❌ Erreur Serveur : ' + e.message });
                 }
               }}
@@ -1126,7 +1489,21 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                   <button onClick={() => setServerDebugResult(null)} className="text-[10px] hover:text-white opacity-50">Fermer</button>
                 </div>
                 <pre className="text-[10px] font-mono whitespace-pre-wrap">
-                  {JSON.stringify(serverDebugResult, null, 2)}
+                  {(() => {
+                    const getCircularReplacer = () => {
+                      const seen = new WeakSet();
+                      return (key: string, value: any) => {
+                        if (typeof value === "object" && value !== null) {
+                          if (seen.has(value)) {
+                            return "[Circular]";
+                          }
+                          seen.add(value);
+                        }
+                        return value;
+                      };
+                    };
+                    return JSON.stringify(serverDebugResult, getCircularReplacer(), 2);
+                  })()}
                 </pre>
               </div>
             )}
@@ -1288,7 +1665,7 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
           )}
 
           <div className="grid gap-6">
-            {modules.map(module => (
+            {modules.map((module, index) => (
               <div key={module.id} className="bg-white border border-zinc-200 rounded-2xl overflow-hidden shadow-sm">
                 <div className="p-6 flex items-center justify-between bg-zinc-50 border-b border-zinc-200">
                   <div className="flex items-center gap-4">
@@ -1301,6 +1678,21 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handleMoveModule(index, 'up')}
+                      disabled={index === 0}
+                      className={`p-2 transition-colors ${index === 0 ? 'text-zinc-200 cursor-not-allowed' : 'text-zinc-400 hover:text-blue-600'}`}
+                    >
+                      <ArrowUp className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleMoveModule(index, 'down')}
+                      disabled={index === modules.length - 1}
+                      className={`p-2 transition-colors ${index === modules.length - 1 ? 'text-zinc-200 cursor-not-allowed' : 'text-zinc-400 hover:text-blue-600'}`}
+                    >
+                      <ArrowDown className="w-4 h-4" />
+                    </button>
+                    <div className="w-px h-5 bg-zinc-200 mx-1"></div>
                     <button onClick={() => setEditingModule(module)} className="p-2 text-zinc-400 hover:text-blue-600 transition-colors">
                       <Edit2 className="w-4 h-4" />
                     </button>
@@ -1329,13 +1721,28 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                           </button>
                         </div>
                         <div className="space-y-2">
-                          {coursesByModule[module.id]?.map(course => (
+                          {coursesByModule[module.id]?.map((course, index) => (
                             <div key={course.id} className="flex items-center justify-between p-3 bg-zinc-50 rounded-xl border border-zinc-100">
                               <div className="flex items-center gap-3">
                                 <span className="text-sm font-medium text-zinc-700">{course.title}</span>
                                 {course.pdfUrl && <FileText className="w-3.5 h-3.5 text-blue-500" />}
                               </div>
                               <div className="flex items-center gap-2">
+                                <button 
+                                  onClick={() => handleMoveCourse(module.id, index, 'up')}
+                                  disabled={index === 0}
+                                  className={`p-1.5 transition-colors ${index === 0 ? 'text-zinc-200 cursor-not-allowed' : 'text-zinc-400 hover:text-blue-600'}`}
+                                >
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button 
+                                  onClick={() => handleMoveCourse(module.id, index, 'down')}
+                                  disabled={index === (coursesByModule[module.id]?.length || 0) - 1}
+                                  className={`p-1.5 transition-colors ${index === (coursesByModule[module.id]?.length || 0) - 1 ? 'text-zinc-200 cursor-not-allowed' : 'text-zinc-400 hover:text-blue-600'}`}
+                                >
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </button>
+                                <div className="w-px h-4 bg-zinc-200 mx-1"></div>
                                 <button onClick={() => setEditingCourse(course)} className="p-1.5 text-zinc-400 hover:text-blue-600 transition-colors">
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
@@ -1961,10 +2368,27 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                   />
                 </div>
                 <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Titre (EN)</label>
+                  <input 
+                    type="text" 
+                    value={editingModule.title_en || ''} 
+                    onChange={e => setEditingModule({ ...editingModule, title_en: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Description</label>
                   <textarea 
                     value={editingModule.description} 
                     onChange={e => setEditingModule({ ...editingModule, description: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-24"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Description (EN)</label>
+                  <textarea 
+                    value={editingModule.description_en || ''} 
+                    onChange={e => setEditingModule({ ...editingModule, description_en: e.target.value })}
                     className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-24"
                   />
                 </div>
@@ -2013,6 +2437,15 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                     />
                   </div>
                   <div>
+                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Titre (EN)</label>
+                    <input 
+                      type="text" 
+                      value={editingCourse.title_en || ''} 
+                      onChange={e => setEditingCourse({ ...editingCourse, title_en: e.target.value })}
+                      className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
                     <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">URL du PDF (Optionnel)</label>
                     <input 
                       type="text" 
@@ -2024,13 +2457,110 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Contenu (Markdown)</label>
-                  <textarea 
-                    value={editingCourse.content} 
-                    onChange={e => setEditingCourse({ ...editingCourse, content: e.target.value })}
-                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-96 font-mono text-sm"
-                    placeholder="# Titre du cours\n\nContenu ici..."
-                  />
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Contenu (Markdown)</label>
+                    <button 
+                      onClick={() => setShowCoursePreview(!showCoursePreview)}
+                      className="text-[10px] font-bold text-blue-600 uppercase tracking-widest hover:underline"
+                    >
+                      {showCoursePreview ? 'Masquer l\'aperçu' : 'Afficher l\'aperçu'}
+                    </button>
+                  </div>
+                  {showCoursePreview ? (
+                    <div className="w-full px-6 py-8 bg-zinc-50 border border-zinc-200 rounded-xl min-h-[400px] prose prose-zinc max-w-none overflow-y-auto">
+                      <div className="markdown-body">
+                        <ReactMarkdown
+                          components={{
+                            img: ({ node, ...props }) => (
+                              <img 
+                                {...props} 
+                                key={props.src}
+                                src={getDirectImageUrl(props.src || '')} 
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  const originalSrc = props.src || '';
+                                  if (originalSrc.includes('drive.google.com') || originalSrc.includes('docs.google.com')) {
+                                    const fileId = originalSrc.match(/\/d\/([^/]+)/)?.[1] || originalSrc.match(/id=([^&]+)/)?.[1];
+                                    if (fileId) {
+                                      if (!target.src.includes('thumbnail')) {
+                                        target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+                                      } else if (!target.src.includes('lh3.googleusercontent.com')) {
+                                        target.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+                                      }
+                                    }
+                                  }
+                                }}
+                                referrerPolicy="no-referrer" 
+                                className="rounded-xl border border-zinc-200 shadow-sm max-w-full h-auto mx-auto block my-8" 
+                              />
+                            )
+                          }}
+                        >
+                          {editingCourse.content}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  ) : (
+                    <textarea 
+                      value={editingCourse.content} 
+                      onChange={e => setEditingCourse({ ...editingCourse, content: e.target.value })}
+                      className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-96 font-mono text-sm"
+                      placeholder="# Titre du cours\n\nContenu ici..."
+                    />
+                  )}
+                </div>
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Contenu (EN) (Markdown)</label>
+                    <button 
+                      onClick={() => setShowCoursePreviewEn(!showCoursePreviewEn)}
+                      className="text-[10px] font-bold text-blue-600 uppercase tracking-widest hover:underline"
+                    >
+                      {showCoursePreviewEn ? 'Masquer l\'aperçu' : 'Afficher l\'aperçu'}
+                    </button>
+                  </div>
+                  {showCoursePreviewEn ? (
+                    <div className="w-full px-6 py-8 bg-zinc-50 border border-zinc-200 rounded-xl min-h-[400px] prose prose-zinc max-w-none overflow-y-auto">
+                      <div className="markdown-body">
+                        <ReactMarkdown
+                          components={{
+                            img: ({ node, ...props }) => (
+                              <img 
+                                {...props} 
+                                key={props.src}
+                                src={getDirectImageUrl(props.src || '')} 
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  const originalSrc = props.src || '';
+                                  if (originalSrc.includes('drive.google.com') || originalSrc.includes('docs.google.com')) {
+                                    const fileId = originalSrc.match(/\/d\/([^/]+)/)?.[1] || originalSrc.match(/id=([^&]+)/)?.[1];
+                                    if (fileId) {
+                                      if (!target.src.includes('thumbnail')) {
+                                        target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+                                      } else if (!target.src.includes('lh3.googleusercontent.com')) {
+                                        target.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+                                      }
+                                    }
+                                  }
+                                }}
+                                referrerPolicy="no-referrer" 
+                                className="rounded-xl border border-zinc-200 shadow-sm max-w-full h-auto mx-auto block my-8" 
+                              />
+                            )
+                          }}
+                        >
+                          {editingCourse.content_en || ''}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  ) : (
+                    <textarea 
+                      value={editingCourse.content_en || ''} 
+                      onChange={e => setEditingCourse({ ...editingCourse, content_en: e.target.value })}
+                      className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-96 font-mono text-sm"
+                      placeholder="# Course Title\n\nContent here..."
+                    />
+                  )}
                 </div>
                 <div className="flex gap-4 pt-4">
                   <button onClick={handleSaveCourse} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">Enregistrer</button>
@@ -2064,6 +2594,14 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                     className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-24"
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Question (EN)</label>
+                  <textarea 
+                    value={editingQuestion.text_en || ''} 
+                    onChange={e => setEditingQuestion({ ...editingQuestion, text_en: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-24"
+                  />
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {editingQuestion.options?.map((opt, idx) => (
                     <div key={idx}>
@@ -2086,6 +2624,17 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                           <CheckCircle2 className="w-5 h-5" />
                         </button>
                       </div>
+                      <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-2 mb-1">Option {idx + 1} (EN)</label>
+                      <input 
+                        type="text" 
+                        value={editingQuestion.options_en?.[idx] || ''} 
+                        onChange={e => {
+                          const newOptionsEn = [...(editingQuestion.options_en || ['', '', '', ''])];
+                          newOptionsEn[idx] = e.target.value;
+                          setEditingQuestion({ ...editingQuestion, options_en: newOptionsEn });
+                        }}
+                        className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                      />
                     </div>
                   ))}
                 </div>
@@ -2094,6 +2643,14 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                   <textarea 
                     value={editingQuestion.explanation} 
                     onChange={e => setEditingQuestion({ ...editingQuestion, explanation: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Explication (EN) (Optionnel)</label>
+                  <textarea 
+                    value={editingQuestion.explanation_en || ''} 
+                    onChange={e => setEditingQuestion({ ...editingQuestion, explanation_en: e.target.value })}
                     className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-20"
                   />
                 </div>
@@ -2119,6 +2676,37 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                       placeholder="https://..."
                       className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                     />
+                    {editingQuestion.attachmentUrl && (editingQuestion.attachmentType === 'image' || editingQuestion.attachmentUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) || editingQuestion.attachmentUrl.includes('drive.google.com') || editingQuestion.attachmentUrl.includes('docs.google.com')) && (
+                      <div className="mt-2 p-4 border border-zinc-200 rounded-xl bg-zinc-50">
+                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-2">Aperçu de l'image :</p>
+                        <div className="relative min-h-[100px] flex items-center justify-center bg-white rounded-lg border border-zinc-100 overflow-hidden">
+                          <img 
+                            key={editingQuestion.attachmentUrl}
+                            src={getDirectImageUrl(editingQuestion.attachmentUrl)} 
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              const url = editingQuestion.attachmentUrl || '';
+                              if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
+                                const fileId = url.match(/\/d\/([^/]+)/)?.[1] || url.match(/id=([^&]+)/)?.[1];
+                                if (fileId) {
+                                  if (!target.src.includes('thumbnail')) {
+                                    target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+                                  } else if (!target.src.includes('lh3.googleusercontent.com')) {
+                                    target.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+                                  }
+                                }
+                              }
+                            }}
+                            alt="Aperçu" 
+                            className="max-h-48 object-contain" 
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                        <p className="mt-2 text-[10px] text-zinc-400 italic">
+                          Note : Si l'image ne s'affiche pas, vérifiez que l'URL est directe et publique.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-4 pt-4">
@@ -2155,11 +2743,46 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                   />
                 </div>
                 <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Titre (EN)</label>
+                  <input 
+                    type="text" 
+                    value={editingQuiz.title_en || ''} 
+                    onChange={e => setEditingQuiz({ ...editingQuiz, title_en: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Description</label>
                   <textarea 
                     value={editingQuiz.description} 
                     onChange={e => setEditingQuiz({ ...editingQuiz, description: e.target.value })}
                     className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-24"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Description (EN)</label>
+                  <textarea 
+                    value={editingQuiz.description_en || ''} 
+                    onChange={e => setEditingQuiz({ ...editingQuiz, description_en: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-24"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Catégorie</label>
+                  <input 
+                    type="text" 
+                    value={editingQuiz.category || ''} 
+                    onChange={e => setEditingQuiz({ ...editingQuiz, category: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Catégorie (EN)</label>
+                  <input 
+                    type="text" 
+                    value={editingQuiz.category_en || ''} 
+                    onChange={e => setEditingQuiz({ ...editingQuiz, category_en: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                   />
                 </div>
                 <div className="flex gap-4 pt-4">
@@ -2207,10 +2830,28 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                   />
                 </div>
                 <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Rôle / Compagnie (EN)</label>
+                  <input 
+                    type="text" 
+                    value={editingTestimonial.role_en || ''} 
+                    onChange={e => setEditingTestimonial({ ...editingTestimonial, role_en: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="ex: First Officer Air France"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Texte du témoignage</label>
                   <textarea 
                     value={editingTestimonial.text} 
                     onChange={e => setEditingTestimonial({ ...editingTestimonial, text: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-32"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Texte du témoignage (EN)</label>
+                  <textarea 
+                    value={editingTestimonial.text_en || ''} 
+                    onChange={e => setEditingTestimonial({ ...editingTestimonial, text_en: e.target.value })}
                     className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none h-32"
                   />
                 </div>
@@ -2372,6 +3013,35 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                   >
                     <Database size={18} />
                     {isSeeding ? 'Restauration en cours...' : 'Réinitialiser les cours par défaut'}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-zinc-200 p-8 mt-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                  <Globe size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-zinc-900">Traduction Automatique</h2>
+                  <p className="text-zinc-500">Traduisez automatiquement les données manquantes en anglais.</p>
+                </div>
+              </div>
+
+              <div className="space-y-4 text-zinc-600">
+                <p>
+                  Cette action va parcourir tous vos témoignages, quiz et questions. Si une traduction en anglais est manquante, 
+                  elle sera générée automatiquement à l'aide de l'IA.
+                </p>
+                
+                <div className="pt-4">
+                  <button 
+                    onClick={translateMissingContent}
+                    disabled={isTranslating}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50"
+                  >
+                    <Globe size={18} />
+                    {isTranslating ? 'Traduction en cours...' : 'Traduire les données manquantes'}
                   </button>
                 </div>
               </div>

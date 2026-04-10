@@ -6,11 +6,14 @@ import { useAuth } from '../App';
 import { BookOpen, ChevronRight, Lock, CheckCircle2, Clock, ChevronDown, ChevronUp, Download, FileText, X, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { useLanguage } from '../LanguageContext';
 
 interface Module {
   id: string;
   title: string;
+  title_en?: string;
   description: string;
+  description_en?: string;
   pdfUrl?: string;
   order: number;
 }
@@ -19,11 +22,13 @@ interface Course {
   id: string;
   moduleId: string;
   title: string;
+  title_en?: string;
   order: number;
 }
 
 export default function Dashboard() {
   const { profile } = useAuth();
+  const { t, language } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showSuccess, setShowSuccess] = useState(searchParams.get('payment') === 'success');
   const [modules, setModules] = useState<Module[]>([]);
@@ -44,7 +49,7 @@ export default function Dashboard() {
   const handleCheckPayment = async () => {
     console.log("handleCheckPayment triggered for UID:", profile?.uid);
     if (!profile?.uid) {
-      showNotification("Erreur : Utilisateur non identifié.", 'error');
+      showNotification(language === 'en' ? "Error: User not identified." : "Erreur : Utilisateur non identifié.", 'error');
       return;
     }
     setCheckingPayment(true);
@@ -57,7 +62,7 @@ export default function Dashboard() {
       });
       
       if (!response.ok) {
-        let errorDetail = `Erreur serveur: ${response.status}`;
+        let errorDetail = language === 'en' ? `Server error: ${response.status}` : `Erreur serveur: ${response.status}`;
         try {
           const errorData = await response.json();
           if (errorData.error) errorDetail = errorData.error;
@@ -76,17 +81,17 @@ export default function Dashboard() {
       console.log("API Success Response:", data);
       
       if (data.success) {
-        showNotification(data.message, 'success');
+        showNotification(language === 'en' ? data.message_en || data.message : data.message, 'success');
         setShowSuccess(true);
         // Force a page reload after a short delay to ensure profile is refreshed
         setTimeout(() => window.location.reload(), 2000);
       } else {
-        showNotification(data.message || "Aucun paiement trouvé.", 'error', data.debug);
+        showNotification(language === 'en' ? data.message_en || "No payment found." : data.message || "Aucun paiement trouvé.", 'error', data.debug);
       }
     } catch (error: any) {
-      console.error("Check Payment Error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Erreur inconnue";
-      showNotification(`Erreur lors de la vérification du paiement : ${errorMessage}`, 'error');
+      console.error("Check Payment Error:", error instanceof Error ? error.message : String(error));
+      const errorMessage = error instanceof Error ? error.message : (language === 'en' ? "Unknown error" : "Erreur inconnue");
+      showNotification(language === 'en' ? `Error during payment verification: ${errorMessage}` : `Erreur lors de la vérification du paiement : ${errorMessage}`, 'error');
     } finally {
       setCheckingPayment(false);
     }
@@ -94,7 +99,7 @@ export default function Dashboard() {
 
   const handleAdminForceActivate = async () => {
     if (!profile?.uid) return;
-    if (!confirm("Voulez-vous forcer l'activation de cet utilisateur ?")) return;
+    if (!confirm(t('dashboard.confirm.forceActivate'))) return;
     
     setCheckingPayment(true);
     try {
@@ -112,11 +117,11 @@ export default function Dashboard() {
         showNotification(data.message, 'success');
         setTimeout(() => window.location.reload(), 2000);
       } else {
-        showNotification(data.error || "Erreur lors de l'activation forcée.", 'error');
+        showNotification(data.error || t('dashboard.error.forceActivate'), 'error');
       }
     } catch (error) {
-      console.error("Admin Force Activate Error:", error);
-      showNotification("Erreur lors de l'activation forcée.", 'error');
+      console.error("Admin Force Activate Error:", error instanceof Error ? error.message : String(error));
+      showNotification(t('dashboard.error.forceActivate'), 'error');
     } finally {
       setCheckingPayment(false);
     }
@@ -194,7 +199,7 @@ export default function Dashboard() {
     };
   }, []);
 
-  if (loading) return <div className="p-8 text-center">Chargement de vos cours...</div>;
+  if (loading) return <div className="p-8 text-center">{t('dashboard.loading')}</div>;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -222,8 +227,20 @@ export default function Dashboard() {
                   <p className="font-bold">DEBUG INFO (Admin Only)</p>
                   <button 
                     onClick={() => {
-                      navigator.clipboard.writeText(JSON.stringify(notification.debug, null, 2));
-                      alert("Infos de debug copiées !");
+                      const getCircularReplacer = () => {
+                        const seen = new WeakSet();
+                        return (key: string, value: any) => {
+                          if (typeof value === "object" && value !== null) {
+                            if (seen.has(value)) {
+                              return "[Circular]";
+                            }
+                            seen.add(value);
+                          }
+                          return value;
+                        };
+                      };
+                      navigator.clipboard.writeText(JSON.stringify(notification.debug, getCircularReplacer(), 2));
+                      alert(t('dashboard.alert.debugCopied'));
                     }}
                     className="px-2 py-0.5 bg-white/10 rounded hover:bg-white/20 transition-colors"
                   >
@@ -264,12 +281,12 @@ export default function Dashboard() {
               </div>
               <div>
                 <h3 className="text-lg font-bold">
-                  {profile?.isPaid ? "Paiement réussi !" : "Vérification de votre paiement..."}
+                  {profile?.isPaid ? t('dashboard.payment.success.title') : t('dashboard.payment.pending.title')}
                 </h3>
                 <p className="text-white/80 text-sm">
                   {profile?.isPaid 
-                    ? "Votre accès complet a été activé. Bienvenue à bord !" 
-                    : "Nous confirmons votre transaction auprès de Stripe. Cela peut prendre quelques secondes."}
+                    ? t('dashboard.payment.success.desc') 
+                    : t('dashboard.payment.pending.desc')}
                 </p>
               </div>
             </div>
@@ -288,9 +305,9 @@ export default function Dashboard() {
 
       <header className="mb-8 md:mb-12 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-zinc-900 mb-2">Votre Formation IR</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-zinc-900 mb-2">{t('dashboard.title')}</h1>
           <p className="text-zinc-500 text-sm md:text-base">
-            {profile?.isPaid ? "Vous avez accès à tout le contenu." : "Abonnez-vous pour débloquer tous les modules."}
+            {profile?.isPaid ? t('dashboard.status.paid') : t('dashboard.status.unpaid')}
           </p>
         </div>
         <button 
@@ -312,7 +329,7 @@ export default function Dashboard() {
               disabled={checkingPayment}
               className="mt-4 text-xs font-bold underline opacity-75 hover:opacity-100 transition-opacity flex items-center gap-2 mx-auto md:mx-0"
             >
-              {checkingPayment ? "Vérification..." : "Déjà payé ? Cliquez ici pour activer votre accès"}
+              {checkingPayment ? t('dashboard.btn.checking') : t('dashboard.btn.alreadyPaid')}
             </button>
           </div>
           <Link to="/payment" className="w-full md:w-auto text-center px-8 py-4 bg-white text-blue-600 font-bold rounded-xl hover:bg-zinc-100 transition-colors whitespace-nowrap">
@@ -344,7 +361,7 @@ export default function Dashboard() {
                     await testConnection();
                     setDbTestStatus({ type: 'success', text: '✅ Connexion réussie !' });
                   } catch (e: any) {
-                    console.error("Dashboard Test DB Error:", e);
+                    console.error("Dashboard Test DB Error:", e instanceof Error ? e.message : String(e));
                     setDbTestStatus({ type: 'error', text: '❌ Erreur : ' + (e.message || 'Inconnue') });
                   }
                 }}
@@ -416,8 +433,8 @@ export default function Dashboard() {
                     )}
                   </div>
                 </div>
-                <h3 className="text-xl font-bold text-zinc-900 mb-2 group-hover:text-zinc-900 transition-colors">{module.title}</h3>
-                <p className="text-sm text-zinc-500 leading-relaxed">{module.description}</p>
+                <h3 className="text-xl font-bold text-zinc-900 mb-2 group-hover:text-zinc-900 transition-colors">{language === 'en' && module.title_en ? module.title_en : module.title}</h3>
+                <p className="text-sm text-zinc-500 leading-relaxed">{language === 'en' && module.description_en ? module.description_en : module.description}</p>
               </button>
               
               <AnimatePresence>
@@ -450,7 +467,7 @@ export default function Dashboard() {
                             rel="noopener noreferrer"
                             className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
                           >
-                            <Download className="w-3.5 h-3.5" /> Télécharger
+                            <Download className="w-3.5 h-3.5" /> {t('dashboard.course.pdf')}
                           </a>
                         </div>
                       )}
@@ -466,7 +483,7 @@ export default function Dashboard() {
                               <div className={`w-8 h-8 ${color.bg} rounded-lg flex items-center justify-center text-xs font-bold ${color.text} group-hover:bg-zinc-900 group-hover:text-white transition-all`}>
                                 {course.order}
                               </div>
-                              <span className="text-sm font-medium text-zinc-700 group-hover:text-zinc-900">{course.title}</span>
+                              <span className="text-sm font-medium text-zinc-700 group-hover:text-zinc-900">{language === 'en' && course.title_en ? course.title_en : course.title}</span>
                             </div>
                             <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-zinc-900 transition-colors" />
                           </Link>

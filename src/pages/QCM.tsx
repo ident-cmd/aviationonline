@@ -4,12 +4,16 @@ import { collection, query, orderBy, onSnapshot, getDocs, addDoc, Timestamp, whe
 import { useAuth } from '../App';
 import { Plane, CheckCircle2, XCircle, ChevronRight, ChevronLeft, RotateCcw, Award, BookOpen, HelpCircle, Clock, History } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useLanguage } from '../LanguageContext';
 
 interface Quiz {
   id: string;
   title: string;
+  title_en?: string;
   description: string;
+  description_en?: string;
   category: string;
+  category_en?: string;
   order: number;
 }
 
@@ -17,9 +21,12 @@ interface Question {
   id: string;
   quizId: string;
   text: string;
+  text_en?: string;
   options: string[];
+  options_en?: string[];
   correctAnswer: number;
   explanation?: string;
+  explanation_en?: string;
   attachmentUrl?: string;
   attachmentType?: 'image' | 'pdf';
   order: number;
@@ -36,6 +43,7 @@ interface QuizAttempt {
 
 export default function QCM() {
   const { profile, user } = useAuth();
+  const { t, language } = useLanguage();
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -47,6 +55,24 @@ export default function QCM() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'quizzes' | 'history'>('quizzes');
   const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
+
+  const getDirectImageUrl = (url: string) => {
+    if (!url) return '';
+    const cleanUrl = url.trim();
+    // Google Drive
+    if (cleanUrl.includes('drive.google.com') || cleanUrl.includes('docs.google.com')) {
+      const fileId = cleanUrl.match(/\/d\/([^/]+)/)?.[1] || cleanUrl.match(/id=([^&]+)/)?.[1];
+      if (fileId) {
+        // Method 1: User Content (most common for direct)
+        return `https://drive.google.com/uc?export=view&id=${fileId}`;
+      }
+    }
+    // Dropbox
+    if (cleanUrl.includes('dropbox.com')) {
+      return cleanUrl.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '').replace('?dl=1', '');
+    }
+    return cleanUrl;
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'quizzes'));
@@ -72,7 +98,7 @@ export default function QCM() {
       fetchedAttempts.sort((a, b) => (b.completedAt?.toMillis() || 0) - (a.completedAt?.toMillis() || 0));
       setAttempts(fetchedAttempts);
     }, (error) => {
-      console.error("Error fetching attempts:", error);
+      console.error("Error fetching attempts:", error instanceof Error ? error.message : String(error));
     });
     
     return () => unsubscribe();
@@ -95,7 +121,7 @@ export default function QCM() {
         setIsAnswered(false);
         setSelectedOption(null);
       } else {
-        alert("Ce quiz ne contient pas encore de questions.");
+        alert(t('qcm.alert.noQuestions'));
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.LIST, `quizzes/${quiz.id}/questions`);
@@ -163,7 +189,7 @@ export default function QCM() {
           })
         });
       } catch (err) {
-        console.error("Error saving quiz results or sending email:", err);
+        console.error("Error saving quiz results or sending email:", err instanceof Error ? err.message : String(err));
       }
     }
   };
@@ -198,7 +224,7 @@ export default function QCM() {
           </div>
           <h1 className="text-4xl font-bold text-zinc-900 mb-4 tracking-tight uppercase">AVIATION ONLINE</h1>
           <p className="text-zinc-500 max-w-2xl mx-auto font-medium">
-            Plateforme QCM - Testez vos connaissances théoriques IFR
+            {t('qcm.title')}
           </p>
         </header>
 
@@ -211,7 +237,7 @@ export default function QCM() {
               }`}
             >
               <HelpCircle className="w-4 h-4" />
-              Quiz disponibles
+              {t('qcm.available')}
             </button>
             <button
               onClick={() => setActiveTab('history')}
@@ -220,7 +246,7 @@ export default function QCM() {
               }`}
             >
               <History className="w-4 h-4" />
-              Historique
+              {t('qcm.history')}
             </button>
           </div>
         </div>
@@ -239,23 +265,23 @@ export default function QCM() {
               >
                 <div className="mb-6">
                   <span className={`px-3 py-1 ${color.bg} ${color.text} text-[10px] font-bold rounded-full uppercase tracking-widest`}>
-                    {quiz.category || 'Général'}
+                    {language === 'en' && quiz.category_en ? quiz.category_en : (quiz.category || 'Général')}
                   </span>
                 </div>
-                <h3 className={`text-xl font-bold text-zinc-900 mb-3 group-hover:${color.text} transition-colors`}>{quiz.title}</h3>
-                <p className="text-sm text-zinc-500 mb-8 flex-grow leading-relaxed">{quiz.description}</p>
+                <h3 className={`text-xl font-bold text-zinc-900 mb-3 group-hover:${color.text} transition-colors`}>{language === 'en' && quiz.title_en ? quiz.title_en : quiz.title}</h3>
+                <p className="text-sm text-zinc-500 mb-8 flex-grow leading-relaxed">{language === 'en' && quiz.description_en ? quiz.description_en : quiz.description}</p>
                 <button 
                   onClick={() => startQuiz(quiz)}
                   className={`w-full py-4 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 ${color.button}`}
                 >
-                  Démarrer le test <ChevronRight className="w-4 h-4" />
+                  {t('qcm.start')} <ChevronRight className="w-4 h-4" />
                 </button>
               </motion.div>
             )})}
             {quizzes.length === 0 && (
               <div className="col-span-full text-center py-20 bg-white border border-dashed border-zinc-300 rounded-3xl">
                 <HelpCircle className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
-                <p className="text-zinc-500">Aucun quiz disponible pour le moment.</p>
+                <p className="text-zinc-500">{t('qcm.empty')}</p>
               </div>
             )}
           </div>
@@ -266,17 +292,17 @@ export default function QCM() {
             {attempts.length === 0 ? (
               <div className="text-center py-20">
                 <History className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
-                <p className="text-zinc-500">Vous n'avez pas encore passé de quiz.</p>
+                <p className="text-zinc-500">{t('qcm.history.empty')}</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-zinc-50 border-b border-zinc-200">
-                      <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-widest">Date</th>
-                      <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-widest">Quiz</th>
-                      <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-widest">Score</th>
-                      <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-widest">Résultat</th>
+                      <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-widest">{t('qcm.history.date')}</th>
+                      <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-widest">{t('qcm.history.quiz')}</th>
+                      <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-widest">{t('qcm.history.score')}</th>
+                      <th className="px-6 py-4 text-xs font-bold text-zinc-400 uppercase tracking-widest">{t('qcm.history.result')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
@@ -327,21 +353,21 @@ export default function QCM() {
           <div className="w-24 h-24 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-8">
             <Award className="w-12 h-12" />
           </div>
-          <h2 className="text-3xl font-bold text-zinc-900 mb-2">Test Terminé !</h2>
-          <p className="text-zinc-500 mb-8">{selectedQuiz.title}</p>
+          <h2 className="text-3xl font-bold text-zinc-900 mb-2">{t('qcm.results.title')}</h2>
+          <p className="text-zinc-500 mb-8">{language === 'en' && selectedQuiz.title_en ? selectedQuiz.title_en : selectedQuiz.title}</p>
           
           <div className="mb-12">
             <div className="text-6xl font-black text-zinc-900 mb-2">{score} / {questions.length}</div>
-            <div className="text-lg font-bold text-blue-600">{percentage}% de réussite</div>
+            <div className="text-lg font-bold text-blue-600">{percentage}% {t('qcm.results.success')}</div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 mb-12">
             <div className="p-6 bg-zinc-50 rounded-3xl">
-              <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Correct</div>
+              <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">{t('qcm.results.correct')}</div>
               <div className="text-2xl font-bold text-emerald-600">{score}</div>
             </div>
             <div className="p-6 bg-zinc-50 rounded-3xl">
-              <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Erreurs</div>
+              <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">{t('qcm.results.errors')}</div>
               <div className="text-2xl font-bold text-rose-600">{questions.length - score}</div>
             </div>
           </div>
@@ -351,13 +377,13 @@ export default function QCM() {
               onClick={() => startQuiz(selectedQuiz)}
               className="flex-1 py-4 bg-zinc-900 text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
             >
-              <RotateCcw className="w-4 h-4" /> Recommencer
+              <RotateCcw className="w-4 h-4" /> {t('qcm.results.restart')}
             </button>
             <button 
               onClick={resetQuiz}
               className="flex-1 py-4 bg-zinc-100 text-zinc-600 font-bold rounded-2xl hover:bg-zinc-200 transition-colors"
             >
-              Retour aux quiz
+              {t('qcm.results.back')}
             </button>
           </div>
         </motion.div>
@@ -375,16 +401,16 @@ export default function QCM() {
         </div>
         <div>
           <h1 className="text-lg font-bold text-zinc-900 tracking-tight uppercase">AVIATION ONLINE</h1>
-          <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">{selectedQuiz.title}</p>
+          <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">{language === 'en' && selectedQuiz.title_en ? selectedQuiz.title_en : selectedQuiz.title}</p>
         </div>
       </div>
 
       <div className="mb-8 flex items-center justify-between">
         <button onClick={resetQuiz} className="text-sm font-bold text-zinc-400 hover:text-zinc-900 flex items-center gap-1 transition-colors">
-          <ChevronLeft className="w-4 h-4" /> Quitter le test
+          <ChevronLeft className="w-4 h-4" /> {t('qcm.question.quit')}
         </button>
         <div className="px-4 py-2 bg-zinc-100 rounded-full text-xs font-bold text-zinc-600">
-          Question {currentQuestionIndex + 1} sur {questions.length}
+          Question {currentQuestionIndex + 1} {t('qcm.question.of')} {questions.length}
         </div>
       </div>
 
@@ -403,12 +429,32 @@ export default function QCM() {
         className="bg-white rounded-[40px] p-8 md:p-12 shadow-xl border border-zinc-100"
       >
         <h2 className="text-2xl font-bold text-zinc-900 mb-8 leading-tight">
-          {currentQuestion.text}
+          {language === 'en' && currentQuestion.text_en ? currentQuestion.text_en : currentQuestion.text}
         </h2>
 
-        {currentQuestion.attachmentUrl && currentQuestion.attachmentType === 'image' && (
-          <div className="mb-8 rounded-2xl overflow-hidden border border-zinc-200">
-            <img src={currentQuestion.attachmentUrl} alt="Illustration de la question" className="w-full h-auto max-h-96 object-contain bg-zinc-50" />
+        {(currentQuestion.attachmentUrl && (currentQuestion.attachmentType === 'image' || currentQuestion.attachmentUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) || currentQuestion.attachmentUrl.includes('drive.google.com') || currentQuestion.attachmentUrl.includes('docs.google.com'))) && (
+          <div className="mb-8 rounded-2xl overflow-hidden border border-zinc-200 bg-zinc-50 min-h-[100px] flex items-center justify-center">
+            <img 
+              key={currentQuestion.attachmentUrl}
+              src={getDirectImageUrl(currentQuestion.attachmentUrl)} 
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                const url = currentQuestion.attachmentUrl || '';
+                if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
+                  const fileId = url.match(/\/d\/([^/]+)/)?.[1] || url.match(/id=([^&]+)/)?.[1];
+                  if (fileId) {
+                    if (!target.src.includes('thumbnail')) {
+                      target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+                    } else if (!target.src.includes('lh3.googleusercontent.com')) {
+                      target.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+                    }
+                  }
+                }
+              }}
+              alt="Illustration de la question" 
+              className="w-full h-auto max-h-96 object-contain" 
+              referrerPolicy="no-referrer"
+            />
           </div>
         )}
 
@@ -421,13 +467,13 @@ export default function QCM() {
               className="inline-flex items-center gap-2 px-6 py-3 bg-blue-50 text-blue-600 font-bold rounded-xl hover:bg-blue-100 transition-colors"
             >
               <BookOpen className="w-5 h-5" />
-              Ouvrir le document PDF associé
+              {language === 'en' ? 'Open associated PDF document' : 'Ouvrir le document PDF associé'}
             </a>
           </div>
         )}
 
         <div className="space-y-4 mb-12">
-          {currentQuestion.options
+          {(language === 'en' && currentQuestion.options_en && currentQuestion.options_en.length > 0 ? currentQuestion.options_en : currentQuestion.options)
             .map((option, idx) => ({ text: option, originalIndex: idx }))
             .filter(opt => opt.text && opt.text.trim() !== '')
             .map((opt) => {
@@ -466,14 +512,14 @@ export default function QCM() {
               disabled={selectedOption === null}
               className="px-10 py-4 bg-zinc-900 text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Valider la réponse
+              {t('qcm.question.validate')}
             </button>
           ) : (
             <button 
               onClick={nextQuestion}
               className="px-10 py-4 bg-blue-600 text-white font-bold rounded-2xl hover:bg-blue-700 transition-colors flex items-center gap-2"
             >
-              {currentQuestionIndex < questions.length - 1 ? "Question suivante" : "Voir les résultats"} <ChevronRight className="w-4 h-4" />
+              {currentQuestionIndex < questions.length - 1 ? t('qcm.question.next') : t('qcm.question.see_results')} <ChevronRight className="w-4 h-4" />
             </button>
           )}
         </div>
