@@ -1,5 +1,5 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
 import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc, Timestamp, collection, query, orderBy, onSnapshot, getDocFromServer } from 'firebase/firestore';
@@ -16,6 +16,13 @@ import TermsOfService from './pages/TermsOfService';
 import QCM from './pages/QCM';
 import Testimonials from './pages/Testimonials';
 import { LanguageProvider, useLanguage } from './LanguageContext';
+
+declare global {
+  interface Window {
+    gtag: (...args: any[]) => void;
+    dataLayer: any[];
+  }
+}
 
 export interface UserProfile {
   uid: string;
@@ -596,6 +603,20 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 }
 
+const GoogleAnalytics = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (typeof window.gtag === 'function') {
+      window.gtag('config', 'G-GW0RK7V854', {
+        page_path: location.pathname + location.search,
+      });
+    }
+  }, [location]);
+
+  return null;
+};
+
 export default function App() {
   // Simple connection test
   useEffect(() => {
@@ -619,6 +640,7 @@ export default function App() {
       <LanguageProvider>
         <AuthProvider>
           <Router>
+            <GoogleAnalytics />
             <div className="min-h-screen bg-zinc-100 font-sans">
               <Navbar />
               <main>

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType, auth, testConnection } from '../firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, query, orderBy, onSnapshot, Timestamp, writeBatch, getDocs, limit, where, getDocFromServer, setDoc } from 'firebase/firestore';
 import { defaultTestimonials } from '../data/testimonials';
-import { Plus, Trash2, Edit2, BookOpen, ChevronDown, ChevronUp, Database, FileText, X, AlertCircle, CheckCircle2, Upload, History, Mail, UserPlus, Award, Users, Search, Star, Shield, ArrowUp, ArrowDown, Globe } from 'lucide-react';
+import { Plus, Trash2, Edit2, BookOpen, ChevronDown, ChevronUp, Database, FileText, X, AlertCircle, CheckCircle2, Upload, History, Mail, UserPlus, Award, Users, Search, Star, Shield, ArrowUp, ArrowDown, Globe, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../App';
 import Papa from 'papaparse';
@@ -128,13 +128,17 @@ export default function AdminDashboard() {
 
   const getDirectImageUrl = (url: string) => {
     if (!url) return '';
-    const cleanUrl = url.trim();
+    let cleanUrl = url.trim();
+    // Force HTTPS for Hostinger or other known hosts if needed
+    if (cleanUrl.startsWith('http://')) {
+      cleanUrl = cleanUrl.replace('http://', 'https://');
+    }
     // Google Drive
     if (cleanUrl.includes('drive.google.com') || cleanUrl.includes('docs.google.com')) {
       const fileId = cleanUrl.match(/\/d\/([^/]+)/)?.[1] || cleanUrl.match(/id=([^&]+)/)?.[1];
       if (fileId) {
-        // Method 1: User Content (most common for direct)
-        return `https://drive.google.com/uc?export=view&id=${fileId}`;
+        // Method 1: lh3 endpoint (usually best for high quality and reliability)
+        return `https://lh3.googleusercontent.com/d/${fileId}=s0`;
       }
     }
     // Dropbox
@@ -2482,16 +2486,16 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                                   if (originalSrc.includes('drive.google.com') || originalSrc.includes('docs.google.com')) {
                                     const fileId = originalSrc.match(/\/d\/([^/]+)/)?.[1] || originalSrc.match(/id=([^&]+)/)?.[1];
                                     if (fileId) {
-                                      if (!target.src.includes('thumbnail')) {
-                                        target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
-                                      } else if (!target.src.includes('lh3.googleusercontent.com')) {
-                                        target.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+                                      if (!target.src.includes('uc?export=view')) {
+                                        target.src = `https://drive.google.com/uc?export=view&id=${fileId}`;
+                                      } else if (!target.src.includes('thumbnail')) {
+                                        target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2500`;
                                       }
                                     }
                                   }
                                 }}
                                 referrerPolicy="no-referrer" 
-                                className="rounded-xl border border-zinc-200 shadow-sm max-w-full h-auto mx-auto block my-8" 
+                                className="rounded-xl border border-zinc-200 shadow-sm max-w-full h-auto mx-auto block my-8 sharp-image" 
                               />
                             )
                           }}
@@ -2535,16 +2539,16 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                                   if (originalSrc.includes('drive.google.com') || originalSrc.includes('docs.google.com')) {
                                     const fileId = originalSrc.match(/\/d\/([^/]+)/)?.[1] || originalSrc.match(/id=([^&]+)/)?.[1];
                                     if (fileId) {
-                                      if (!target.src.includes('thumbnail')) {
-                                        target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
-                                      } else if (!target.src.includes('lh3.googleusercontent.com')) {
-                                        target.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+                                      if (!target.src.includes('uc?export=view')) {
+                                        target.src = `https://drive.google.com/uc?export=view&id=${fileId}`;
+                                      } else if (!target.src.includes('thumbnail')) {
+                                        target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2500`;
                                       }
                                     }
                                   }
                                 }}
                                 referrerPolicy="no-referrer" 
-                                className="rounded-xl border border-zinc-200 shadow-sm max-w-full h-auto mx-auto block my-8" 
+                                className="rounded-xl border border-zinc-200 shadow-sm max-w-full h-auto mx-auto block my-8 sharp-image" 
                               />
                             )
                           }}
@@ -2679,7 +2683,7 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                     {editingQuestion.attachmentUrl && (editingQuestion.attachmentType === 'image' || editingQuestion.attachmentUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) || editingQuestion.attachmentUrl.includes('drive.google.com') || editingQuestion.attachmentUrl.includes('docs.google.com')) && (
                       <div className="mt-2 p-4 border border-zinc-200 rounded-xl bg-zinc-50">
                         <p className="text-[10px] font-bold text-zinc-400 uppercase mb-2">Aperçu de l'image :</p>
-                        <div className="relative min-h-[100px] flex items-center justify-center bg-white rounded-lg border border-zinc-100 overflow-hidden">
+                        <div className="relative min-h-[100px] flex items-center justify-center bg-white rounded-lg border border-zinc-100 overflow-hidden group">
                           <img 
                             key={editingQuestion.attachmentUrl}
                             src={getDirectImageUrl(editingQuestion.attachmentUrl)} 
@@ -2689,18 +2693,27 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
                               if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
                                 const fileId = url.match(/\/d\/([^/]+)/)?.[1] || url.match(/id=([^&]+)/)?.[1];
                                 if (fileId) {
-                                  if (!target.src.includes('thumbnail')) {
-                                    target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
-                                  } else if (!target.src.includes('lh3.googleusercontent.com')) {
-                                    target.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+                                  if (!target.src.includes('uc?export=view')) {
+                                    target.src = `https://drive.google.com/uc?export=view&id=${fileId}`;
+                                  } else if (!target.src.includes('thumbnail')) {
+                                    target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2500`;
                                   }
                                 }
                               }
                             }}
                             alt="Aperçu" 
-                            className="max-h-48 object-contain" 
+                            className="max-h-80 w-auto object-contain sharp-image" 
                             referrerPolicy="no-referrer"
                           />
+                          <a 
+                            href={getDirectImageUrl(editingQuestion.attachmentUrl)} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="absolute top-2 right-2 p-1.5 bg-white/90 backdrop-blur shadow-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-white text-zinc-600 hover:text-blue-600"
+                            title="Ouvrir l'image originale"
+                          >
+                            <ExternalLink size={14} />
+                          </a>
                         </div>
                         <p className="mt-2 text-[10px] text-zinc-400 italic">
                           Note : Si l'image ne s'affiche pas, vérifiez que l'URL est directe et publique.

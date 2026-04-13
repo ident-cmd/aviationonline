@@ -79,13 +79,17 @@ export default function CourseView() {
 
   const getDirectImageUrl = (url: string) => {
     if (!url) return '';
-    const cleanUrl = url.trim();
+    let cleanUrl = url.trim();
+    // Force HTTPS for Hostinger or other known hosts if needed
+    if (cleanUrl.startsWith('http://')) {
+      cleanUrl = cleanUrl.replace('http://', 'https://');
+    }
     // Google Drive
     if (cleanUrl.includes('drive.google.com') || cleanUrl.includes('docs.google.com')) {
       const fileId = cleanUrl.match(/\/d\/([^/]+)/)?.[1] || cleanUrl.match(/id=([^&]+)/)?.[1];
       if (fileId) {
-        // Method 1: User Content (most common for direct)
-        return `https://drive.google.com/uc?export=view&id=${fileId}`;
+        // Method 1: lh3 endpoint (usually best for high quality and reliability)
+        return `https://lh3.googleusercontent.com/d/${fileId}=s0`;
       }
     }
     // Dropbox
@@ -131,16 +135,16 @@ export default function CourseView() {
                       if (originalSrc.includes('drive.google.com') || originalSrc.includes('docs.google.com')) {
                         const fileId = originalSrc.match(/\/d\/([^/]+)/)?.[1] || originalSrc.match(/id=([^&]+)/)?.[1];
                         if (fileId) {
-                          if (!target.src.includes('thumbnail')) {
-                            target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
-                          } else if (!target.src.includes('lh3.googleusercontent.com')) {
-                            target.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+                          if (!target.src.includes('uc?export=view')) {
+                            target.src = `https://drive.google.com/uc?export=view&id=${fileId}`;
+                          } else if (!target.src.includes('thumbnail')) {
+                            target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2500`;
                           }
                         }
                       }
                     }}
                     referrerPolicy="no-referrer" 
-                    className="rounded-xl border border-zinc-200 shadow-sm max-w-full h-auto mx-auto block my-8" 
+                    className="rounded-xl border border-zinc-200 shadow-sm max-w-full h-auto mx-auto block my-8 sharp-image" 
                   />
                 )
               }}

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, orderBy, onSnapshot, getDocs, addDoc, Timestamp, where } from 'firebase/firestore';
 import { useAuth } from '../App';
-import { Plane, CheckCircle2, XCircle, ChevronRight, ChevronLeft, RotateCcw, Award, BookOpen, HelpCircle, Clock, History } from 'lucide-react';
+import { Plane, CheckCircle2, XCircle, ChevronRight, ChevronLeft, RotateCcw, Award, BookOpen, HelpCircle, Clock, History, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../LanguageContext';
 
@@ -58,13 +58,17 @@ export default function QCM() {
 
   const getDirectImageUrl = (url: string) => {
     if (!url) return '';
-    const cleanUrl = url.trim();
+    let cleanUrl = url.trim();
+    // Force HTTPS for Hostinger or other known hosts if needed
+    if (cleanUrl.startsWith('http://')) {
+      cleanUrl = cleanUrl.replace('http://', 'https://');
+    }
     // Google Drive
     if (cleanUrl.includes('drive.google.com') || cleanUrl.includes('docs.google.com')) {
       const fileId = cleanUrl.match(/\/d\/([^/]+)/)?.[1] || cleanUrl.match(/id=([^&]+)/)?.[1];
       if (fileId) {
-        // Method 1: User Content (most common for direct)
-        return `https://drive.google.com/uc?export=view&id=${fileId}`;
+        // Method 1: lh3 endpoint (usually best for high quality and reliability)
+        return `https://lh3.googleusercontent.com/d/${fileId}=s0`;
       }
     }
     // Dropbox
@@ -432,29 +436,40 @@ export default function QCM() {
           {language === 'en' && currentQuestion.text_en ? currentQuestion.text_en : currentQuestion.text}
         </h2>
 
-        {(currentQuestion.attachmentUrl && (currentQuestion.attachmentType === 'image' || currentQuestion.attachmentUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) || currentQuestion.attachmentUrl.includes('drive.google.com') || currentQuestion.attachmentUrl.includes('docs.google.com'))) && (
-          <div className="mb-8 rounded-2xl overflow-hidden border border-zinc-200 bg-zinc-50 min-h-[100px] flex items-center justify-center">
-            <img 
-              key={currentQuestion.attachmentUrl}
-              src={getDirectImageUrl(currentQuestion.attachmentUrl)} 
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                const url = currentQuestion.attachmentUrl || '';
-                if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
-                  const fileId = url.match(/\/d\/([^/]+)/)?.[1] || url.match(/id=([^&]+)/)?.[1];
-                  if (fileId) {
-                    if (!target.src.includes('thumbnail')) {
-                      target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
-                    } else if (!target.src.includes('lh3.googleusercontent.com')) {
-                      target.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+        {(currentQuestion.attachmentUrl && (currentQuestion.attachmentType === 'image' || currentQuestion.attachmentUrl.match(/\.(jpeg|jpg|gif|png|webp|svg|avif)$/i) || currentQuestion.attachmentUrl.includes('drive.google.com') || currentQuestion.attachmentUrl.includes('docs.google.com') || currentQuestion.attachmentUrl.includes('hostinger'))) && (
+          <div className="mb-8 group relative">
+            <div className="rounded-2xl overflow-hidden border border-zinc-200 bg-white min-h-[100px] flex items-center justify-center shadow-sm">
+              <img 
+                key={currentQuestion.attachmentUrl}
+                src={getDirectImageUrl(currentQuestion.attachmentUrl)} 
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  const url = currentQuestion.attachmentUrl || '';
+                  if (url.includes('drive.google.com') || url.includes('docs.google.com')) {
+                    const fileId = url.match(/\/d\/([^/]+)/)?.[1] || url.match(/id=([^&]+)/)?.[1];
+                    if (fileId) {
+                      if (!target.src.includes('uc?export=view')) {
+                        target.src = `https://drive.google.com/uc?export=view&id=${fileId}`;
+                      } else if (!target.src.includes('thumbnail')) {
+                        target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2500`;
+                      }
                     }
                   }
-                }
-              }}
-              alt="Illustration de la question" 
-              className="w-full h-auto max-h-96 object-contain" 
-              referrerPolicy="no-referrer"
-            />
+                }}
+                alt="Illustration de la question" 
+                className="max-w-full h-auto max-h-[700px] object-contain sharp-image" 
+                referrerPolicy="no-referrer"
+              />
+            </div>
+            <a 
+              href={getDirectImageUrl(currentQuestion.attachmentUrl)} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="absolute top-4 right-4 p-2 bg-white/90 backdrop-blur shadow-lg rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-white text-zinc-600 hover:text-blue-600"
+              title="Ouvrir l'image en plein écran"
+            >
+              <ExternalLink size={18} />
+            </a>
           </div>
         )}
 
