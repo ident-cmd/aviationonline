@@ -1126,6 +1126,42 @@ async function startServer() {
     }
   });
 
+  app.post("/api/admin/create-student", async (req, res) => {
+    const { adminToken, email, firstName, lastName, password } = req.body;
+    try {
+      if (!adminToken) return res.status(401).json({ error: "Unauthorized" });
+      const decodedToken = await auth.verifyIdToken(adminToken);
+      if (decodedToken.email !== 'ident@aviationonline.fr' && decodedToken.email !== 'contact@aviationonline.net') {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (!email || !password) return res.status(400).json({ error: "Email et mot de passe requis" });
+
+      const userRecord = await auth.createUser({
+        email: email,
+        emailVerified: true,
+        password: password,
+        displayName: `${firstName} ${lastName}`.trim(),
+      });
+
+      await setDoc(doc(db, 'users', userRecord.uid), {
+        uid: userRecord.uid,
+        email: email.toLowerCase(),
+        firstName: firstName || '',
+        lastName: lastName || '',
+        role: 'student',
+        isPaid: true,
+        paidAt: Timestamp.now(),
+        createdAt: Timestamp.now(),
+      });
+
+      res.json({ success: true, message: "Utilisateur créé avec succès" });
+    } catch (e: any) {
+      console.error("Create student error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/admin/sync-missing-stripe", async (req, res) => {
     const { adminToken } = req.body;
     try {

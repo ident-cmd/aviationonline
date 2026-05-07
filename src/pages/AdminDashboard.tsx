@@ -202,6 +202,9 @@ export default function AdminDashboard() {
   const [stripeDiagnostics, setStripeDiagnostics] = useState<any[] | null>(null);
   const [isDiagnosingStripe, setIsDiagnosingStripe] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState<{ type: 'module' | 'course' | 'clear' | 'user' | 'seedTestimonials' | 'quiz', id?: string, moduleId?: string } | null>(null);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [newUserForm, setNewUserForm] = useState({ email: '', firstName: '', lastName: '', password: '' });
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
   
   // Migration state
   const [migrationData, setMigrationData] = useState<any[]>([]);
@@ -274,6 +277,29 @@ export default function AdminDashboard() {
       showStatus('error', "Impossible de contacter le serveur Stripe.");
     } finally {
       setIsDiagnosingStripe(false);
+    }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreatingUser(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken(true);
+      const res = await fetch('/api/admin/create-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminToken: idToken, ...newUserForm })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur lors de la création');
+      showStatus('success', 'Utilisateur créé avec succès !');
+      setShowCreateUserModal(false);
+      setNewUserForm({ email: '', firstName: '', lastName: '', password: '' });
+      // Fetch users again to reflect changes? Real-time snapshot might handle it
+    } catch (e: any) {
+      showStatus('error', e.message);
+    } finally {
+      setIsCreatingUser(false);
     }
   };
 
@@ -1574,7 +1600,6 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
               onClick={async () => {
                 if (!profile?.uid) return;
                 try {
-                  const { updateDoc, doc } = await import('firebase/firestore');
                   await updateDoc(doc(db, 'users', profile.uid), { isPaid: true });
                   alert("✅ Accès forcé avec succès !");
                   window.location.reload();
@@ -1872,20 +1897,28 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
             <h2 className="text-xl font-bold text-zinc-900 flex items-center gap-2">
               <Users className="w-5 h-5" /> Gestion des utilisateurs
             </h2>
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <button
-                onClick={checkAllPayments}
-                disabled={isCheckingAll}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-colors font-bold text-sm disabled:opacity-50"
-              >
-                {isCheckingAll ? (
-                  <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <History className="w-4 h-4" />
-                )}
-                Synchroniser Stripe
-              </button>
-              <div className="relative w-full sm:w-64">
+            <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 mb-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={checkAllPayments}
+                  disabled={isCheckingAll}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-colors font-bold text-sm disabled:opacity-50 whitespace-nowrap"
+                >
+                  {isCheckingAll ? (
+                    <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <History className="w-4 h-4" />
+                  )}
+                  Synchroniser Stripe
+                </button>
+                <button
+                  onClick={() => setShowCreateUserModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors font-bold text-sm whitespace-nowrap"
+                >
+                  <Plus className="w-4 h-4" /> Nouvel élève
+                </button>
+              </div>
+              <div className="relative w-full xl:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                 <input 
                   type="text" 
@@ -3153,6 +3186,82 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
             </div>
           </div>
         )}
+        {showCreateUserModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[120] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-zinc-900 flex items-center gap-2">
+                  <UserPlus className="w-6 h-6 text-blue-600" /> Nouvel élève
+                </h3>
+                <button onClick={() => setShowCreateUserModal(false)} className="text-zinc-400 hover:text-zinc-600">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <form onSubmit={handleCreateUser} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Prénom</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={newUserForm.firstName} 
+                      onChange={e => setNewUserForm({ ...newUserForm, firstName: e.target.value })}
+                      className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Nom</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={newUserForm.lastName} 
+                      onChange={e => setNewUserForm({ ...newUserForm, lastName: e.target.value })}
+                      className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Email</label>
+                  <input 
+                    type="email" 
+                    required
+                    value={newUserForm.email} 
+                    onChange={e => setNewUserForm({ ...newUserForm, email: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Mot de passe provisoire</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={newUserForm.password} 
+                    onChange={e => setNewUserForm({ ...newUserForm, password: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                  <p className="text-xs text-zinc-500 mt-1">Vous devrez lui communiquer ces accès. Il pourra changer son mot de passe ensuite.</p>
+                </div>
+                
+                <div className="flex gap-4 pt-4">
+                  <button 
+                    type="submit"
+                    disabled={isCreatingUser} 
+                    className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 disabled:opacity-50"
+                  >
+                    {isCreatingUser ? 'Création...' : 'Créer l\'accès'}
+                  </button>
+                  <button type="button" onClick={() => setShowCreateUserModal(false)} className="flex-1 py-3 bg-zinc-100 text-zinc-600 font-bold rounded-xl hover:bg-zinc-200 transition-colors">Annuler</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
       </AnimatePresence>
     </div>
   );
