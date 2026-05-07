@@ -199,6 +199,8 @@ export default function AdminDashboard() {
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
   const [dbTestStatus, setDbTestStatus] = useState<{ type: 'success' | 'error' | 'loading', text: string } | null>(null);
   const [serverDebugResult, setServerDebugResult] = useState<any>(null);
+  const [stripeDiagnostics, setStripeDiagnostics] = useState<any[] | null>(null);
+  const [isDiagnosingStripe, setIsDiagnosingStripe] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState<{ type: 'module' | 'course' | 'clear' | 'user' | 'seedTestimonials' | 'quiz', id?: string, moduleId?: string } | null>(null);
   
   // Migration state
@@ -211,6 +213,26 @@ export default function AdminDashboard() {
     setIsCheckingAll(true);
     let count = 0;
     try {
+      const idToken = await auth.currentUser?.getIdToken(true);
+      
+      // Step 1: Sync missing users directly from Stripe
+      try {
+        const syncRes = await fetch('/api/admin/sync-missing-stripe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ adminToken: idToken }),
+        });
+        const syncData = await syncRes.json();
+        if (syncData.success && (syncData.created > 0 || syncData.updated > 0)) {
+          showStatus('success', `${syncData.created} comptes créés, ${syncData.updated} mis à jour depuis Stripe.`);
+          // Delay to allow UI/Firebase to fetch the new users before the second pass
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (e: any) {
+        console.error("Failed to sync missing stripe users", e);
+      }
+
+      // Step 2: Ensure all current students are double-checked
       for (const student of students) {
         if (!student.isPaid) {
           const response = await fetch('/api/check-payment-status', {
@@ -219,18 +241,39 @@ export default function AdminDashboard() {
             body: JSON.stringify({ userId: student.uid, email: student.email }),
           });
           const data = await response.json();
-          if (data.success) {
+          if (data.success && !data.alreadyPaid) {
             count++;
-            // Update local state so UI reflects change immediately
             setStudents(prev => prev.map(s => s.uid === student.uid ? { ...s, isPaid: true } : s));
           }
         }
       }
-      showStatus('success', `${count} paiements synchronisés.`);
+      showStatus('success', `Synchronisation terminée. ${count > 0 ? count + ' profils locaux mis à jour.' : ''}`);
     } catch (e) {
       showStatus('error', "Erreur lors de la synchronisation globale.");
     } finally {
       setIsCheckingAll(false);
+    }
+  };
+
+  const runStripeDiagnostic = async () => {
+    setIsDiagnosingStripe(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken(true);
+      const res = await fetch('/api/admin/recent-stripe-payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminToken: idToken }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStripeDiagnostics(data.payments);
+      } else {
+        showStatus('error', data.error || "Erreur lors de la lecture des paiements Stripe.");
+      }
+    } catch(e) {
+      showStatus('error', "Impossible de contacter le serveur Stripe.");
+    } finally {
+      setIsDiagnosingStripe(false);
     }
   };
 
@@ -1521,6 +1564,13 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
               </div>
             )}
             <button 
+              onClick={runStripeDiagnostic}
+              disabled={isDiagnosingStripe}
+              className="w-full px-4 py-3 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded-xl transition-all text-sm font-bold flex items-center justify-center gap-2 border border-purple-600/30"
+            >
+              {isDiagnosingStripe ? "Analyse Stripe..." : "[Diagnostic Stripe] - Voir récents"}
+            </button>
+            <button 
               onClick={async () => {
                 if (!profile?.uid) return;
                 try {
@@ -1537,7 +1587,7 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
               [FORCER ACTIVATION] - Débloquer mon accès
             </button>
           </div>
-          <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
             <Link 
               to="/dashboard"
               className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl transition-all text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20"
@@ -1549,6 +1599,48 @@ Ne renvoie QUE le JSON, sans markdown, sans \`\`\`json, juste l'objet JSON.`
             </p>
           </div>
         </div>
+
+        {stripeDiagnostics && (
+          <div className="mt-4 p-4 bg-white/5 rounded-2xl border border-white/5 overflow-auto w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-bold text-white uppercase flex items-center gap-2">
+                <History className="w-4 h-4" /> Les 15 Dernières sessions Stripe
+              </h3>
+              <button onClick={() => setStripeDiagnostics(null)} className="text-xs text-white/50 hover:text-white">Fermer</button>
+            </div>
+            {stripeDiagnostics.length > 0 ? (
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/10">
+                    <th className="py-2 opacity-50 font-medium">Email Stripe / Nom</th>
+                    <th className="py-2 opacity-50 font-medium">Mode</th>
+                    <th className="py-2 opacity-50 font-medium">Date</th>
+                    <th className="py-2 opacity-50 font-medium">Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stripeDiagnostics.map(s => (
+                    <tr key={s.id} className="border-b border-white/5">
+                      <td className="py-2">
+                        <div className="font-bold text-white">{s.email}</div>
+                        <div className="opacity-50">{s.name}</div>
+                      </td>
+                      <td className="py-2 font-mono">
+                        <span className={s.mode === 'Live' ? 'text-emerald-400' : 'text-orange-400'}>{s.mode}</span>
+                      </td>
+                      <td className="py-2 opacity-70">{s.date}</td>
+                      <td className="py-2 font-bold">
+                        {s.status === 'paid' ? <span className="text-emerald-400">Payé</span> : <span className="text-rose-400">{s.status}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="text-xs text-white/50 italic">Aucune session trouvée dans Stripe.</p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="bg-zinc-100 p-1 rounded-xl mb-8 overflow-x-auto no-scrollbar">

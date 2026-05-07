@@ -375,7 +375,74 @@ async function startServer() {
             });
             console.log(`User ${userDoc.id} successfully marked as paid in Firestore via Webhook (Email match: ${userEmail})`);
           } else {
-            console.warn(`No user found with email ${userEmail} to mark as paid via Webhook`);
+            console.log(`No user found with email ${userEmail}. Creating new user from webhook...`);
+            try {
+              const tempPassword = Math.random().toString(36).slice(-8) + "Az1!"; // Ensure password complexity
+              const displayName = session.customer_details?.name || 'Pilote';
+              const firstName = displayName.split(' ')[0] || '';
+              const lastName = displayName.split(' ').slice(1).join(' ') || '';
+
+              // Create Auth User
+              const userRecord = await auth.createUser({
+                email: userEmail,
+                emailVerified: true,
+                password: tempPassword,
+                displayName: displayName,
+              });
+
+              // Create Firestore Profile
+              await setDoc(doc(db, 'users', userRecord.uid), {
+                uid: userRecord.uid,
+                email: userEmail,
+                firstName: firstName,
+                lastName: lastName,
+                role: 'student',
+                isPaid: true,
+                paidAt: Timestamp.now(),
+                stripeSessionId: session.id,
+                createdAt: Timestamp.now(),
+              });
+
+              console.log(`New user ${userRecord.uid} successfully created and marked as paid via Webhook`);
+
+              // Send welcome email with password
+              const appUrl = process.env.APP_URL || `https://${req.get('host')}`;
+              await sendEmail({
+                to: userEmail,
+                subject: 'Vos accès & Confirmation de paiement - Aviation Online',
+                html: `
+                  <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                    <h2 style="color: #2563eb;">Bienvenue sur Aviation Online !</h2>
+                    <p>Votre paiement de 79€ a été validé avec succès. Votre compte a été créé automatiquement.</p>
+                    <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0;">
+                      <p><strong>Vos identifiants de connexion :</strong></p>
+                      <p>Email : ${userEmail}</p>
+                      <p>Mot de passe provisoire : <strong>${tempPassword}</strong></p>
+                      <p>Lien de connexion : <a href="${appUrl}/login">${appUrl}/login</a></p>
+                    </div>
+                    <p>Nous vous conseillons de modifier votre mot de passe une fois connecté (dans votre profil).</p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                    <p style="font-size: 12px; color: #94a3b8;">Jean-Claude CHENARD - Aviation Online</p>
+                  </div>
+                `
+              });
+              
+              // Notify admin
+              await sendEmail({
+                to: 'contact@aviationonline.net',
+                subject: '🔔 Nouveau Client & Création de compte',
+                html: `
+                  <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                    <h2 style="color: #1e293b;">Nouveau client créé !</h2>
+                    <p>Un client vient d'acheter via un lien externe, son compte a été généré.</p>
+                    <p>Client : ${displayName} (${userEmail})</p>
+                  </div>
+                `
+              });
+
+            } catch (createErr: any) {
+              console.error(`Failed to automatically create user for email ${userEmail}:`, createErr.message || createErr);
+            }
           }
         } catch (err: any) {
           console.error(`Error searching/updating user by email ${userEmail} via Webhook:`, err.message);
@@ -1056,6 +1123,140 @@ async function startServer() {
     } catch (error: any) {
       console.error("Email Error:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/sync-missing-stripe", async (req, res) => {
+    const { adminToken } = req.body;
+    try {
+      if (!adminToken) return res.status(401).json({ error: "Unauthorized" });
+      const decodedToken = await auth.verifyIdToken(adminToken);
+      if (decodedToken.email !== 'ident@aviationonline.fr' && decodedToken.email !== 'contact@aviationonline.net') {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      console.log("Admin syncing all missing Stripe sessions...");
+      const stripe = getStripe();
+      const sessions = await stripe.checkout.sessions.list({
+        limit: 100,
+        expand: ['data.customer']
+      });
+
+      const paidSessions = sessions.data.filter(s => s.payment_status === 'paid');
+      let createdCount = 0;
+      let updatedCount = 0;
+
+      for (const session of paidSessions) {
+        const userEmail = (session.customer_details?.email || session.customer_email || session.metadata?.userEmail || '').toLowerCase();
+        if (!userEmail) continue;
+
+        const usersRef = collection(db, 'users');
+        const snapshot = await getDocs(query(usersRef, where('email', '==', userEmail), limit(1)));
+
+        if (snapshot.empty) {
+          // CREATE missing user
+          try {
+            console.log(`Missing user found for paid session! Email: ${userEmail}`);
+            const tempPassword = Math.random().toString(36).slice(-8) + "Az1!";
+            const displayName = session.customer_details?.name || 'Pilote';
+            const firstName = displayName.split(' ')[0] || '';
+            const lastName = displayName.split(' ').slice(1).join(' ') || '';
+
+            const userRecord = await auth.createUser({
+              email: userEmail,
+              emailVerified: true,
+              password: tempPassword,
+              displayName: displayName,
+            });
+
+            await setDoc(doc(db, 'users', userRecord.uid), {
+              uid: userRecord.uid,
+              email: userEmail,
+              firstName: firstName,
+              lastName: lastName,
+              role: 'student',
+              isPaid: true,
+              paidAt: Timestamp.now(),
+              stripeSessionId: session.id,
+              createdAt: Timestamp.now(),
+            });
+
+            const appUrl = process.env.APP_URL || `https://${req.get('host')}`;
+            await sendEmail({
+              to: userEmail,
+              subject: 'Vos accès - Aviation Online',
+              html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                  <h2 style="color: #2563eb;">Bienvenue sur Aviation Online !</h2>
+                  <p>Votre paiement a été retrouvé avec succès. Votre compte vient d'être généré.</p>
+                  <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0;">
+                    <p><strong>Vos identifiants de connexion :</strong></p>
+                    <p>Email : ${userEmail}</p>
+                    <p>Mot de passe provisoire : <strong>${tempPassword}</strong></p>
+                    <p>Lien de connexion : <a href="${appUrl}/login">${appUrl}/login</a></p>
+                  </div>
+                  <p>Nous vous conseillons de modifier votre mot de passe une fois connecté.</p>
+                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                  <p style="font-size: 12px; color: #94a3b8;">Jean-Claude CHENARD - Aviation Online</p>
+                </div>
+              `
+            }).catch(e => console.error("Could not send email to synced user", e));
+
+            createdCount++;
+          } catch (e: any) {
+            console.error(`Failed to create missing user ${userEmail}:`, e.message);
+          }
+        } else {
+          // User exists, just ensure they are marked paid
+          const userDoc = snapshot.docs[0];
+          if (!userDoc.data().isPaid) {
+            await updateDoc(userDoc.ref, {
+              isPaid: true,
+              paidAt: Timestamp.now(),
+              stripeSessionId: session.id
+            });
+            updatedCount++;
+          }
+        }
+      }
+
+      res.json({ success: true, created: createdCount, updated: updatedCount });
+    } catch (e: any) {
+      console.error("Sync missing Stripe error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/recent-stripe-payments", async (req, res) => {
+    const { adminToken } = req.body;
+    try {
+      if (!adminToken) return res.status(401).json({ error: "Unauthorized" });
+      const decodedToken = await auth.verifyIdToken(adminToken);
+      if (decodedToken.email !== 'ident@aviationonline.fr' && decodedToken.email !== 'contact@aviationonline.net') {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const stripe = getStripe();
+      // Fetch the last 15 checkout sessions
+      const sessions = await stripe.checkout.sessions.list({
+        limit: 15,
+        expand: ['data.customer']
+      });
+
+      const recentPayments = sessions.data.map(s => ({
+        id: s.id,
+        email: (s.customer_details?.email || s.customer_email || s.metadata?.userEmail || 'Inconnu').toLowerCase(),
+        name: s.customer_details?.name || 'Inconnu',
+        amount: (s.amount_total || 0) / 100,
+        status: s.payment_status,
+        date: new Date(s.created * 1000).toLocaleString('fr-FR'),
+        mode: s.livemode ? 'Live' : 'Test'
+      }));
+
+      res.json({ success: true, payments: recentPayments });
+    } catch (e: any) {
+      console.error("Diagnostic Stripe error:", e);
+      res.status(500).json({ error: e.message });
     }
   });
 
